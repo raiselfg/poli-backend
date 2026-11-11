@@ -84,7 +84,9 @@ async def get_request(
 
 
 @router.get("/admin/requests/{request_id}/file")
-async def download_request_file(request_id: UUID, service: RequestServiceDep):
+async def download_request_file(
+    request_id: UUID, service: RequestServiceDep, current_session: CurrentSessionDep
+):
     try:
         media, body = await service.file(request_id)
     except RequestNotFoundError:

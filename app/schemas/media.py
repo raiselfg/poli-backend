@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MediaRead(BaseModel):
@@ -21,4 +21,11 @@ class MediaRead(BaseModel):
 class MediaUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    alt: str | None = Field(max_length=200)
+    alt: str = Field(min_length=1, max_length=200)
+
+    @field_validator("alt")
+    @classmethod
+    def alt_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Alt must not be blank")
+        return value

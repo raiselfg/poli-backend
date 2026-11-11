@@ -80,7 +80,8 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                 )
             ).status_code == 200
             response = await client.post(
-                "/api/v1/admin/media", files={"file": ("image.png", image.getvalue(), "image/png")}
+                "/api/v1/admin/media", data={"alt": "Изображение"},
+                files={"file": ("image.png", image.getvalue(), "image/png")}
             )
             assert response.status_code == 201, response.text
             media_id = response.json()["id"]
@@ -108,7 +109,8 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert any(item["id"] == category_id for item in response.json())
             assert (await client.delete(f"/api/v1/admin/media/{media_id}")).status_code == 409
             invalid = await client.post(
-                "/api/v1/admin/media", files={"file": ("fake.png", b"not an image", "image/png")}
+                "/api/v1/admin/media", data={"alt": "Изображение"},
+                files={"file": ("fake.png", b"not an image", "image/png")}
             )
             assert invalid.status_code == 415
             too_large = await client.post(

@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import CurrentSessionDep, MediaServiceDep
@@ -22,7 +22,10 @@ async def upload_media(
     current_session: CurrentSessionDep,
     service: MediaServiceDep,
     file: Annotated[UploadFile, File()],
+    alt: Annotated[str, Form(min_length=1, max_length=200)],
 ):
+    if not alt.strip():
+        raise HTTPException(status_code=422, detail="Alt must not be blank")
     try:
         checked = await check_file(file, images_only=True)
     except FileTooLargeError:
@@ -41,6 +44,7 @@ async def upload_media(
             checked.size,
             checked.width,
             checked.height,
+            alt,
         )
     finally:
         checked.stream.close()

@@ -37,7 +37,7 @@ class MediaService:
         return media
 
     async def upload(
-        self, stream: BinaryIO, name: str, mime_type: str, size: int, width: int, height: int
+        self, stream: BinaryIO, name: str, mime_type: str, size: int, width: int, height: int, alt: str
     ) -> Media:
         media_id = uuid4()
         bucket = self.storage.settings.s3_public_bucket
@@ -51,13 +51,14 @@ class MediaService:
             size_bytes=size,
             width=width,
             height=height,
+            alt=alt,
         )
         self.media.add(media)
         await self.db.commit()
         await self.db.refresh(media)
         return media
 
-    async def update(self, media_id: UUID, alt: str | None) -> Media:
+    async def update(self, media_id: UUID, alt: str) -> Media:
         media = await self.get(media_id)
         media.alt = alt
         await self.db.commit()

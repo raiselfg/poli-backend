@@ -8,7 +8,9 @@ import pytest
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.core.config as config_module
-from app.api.dependencies import get_auth_service, get_request_service
+from app.api.dependencies import (
+    get_auth_service, get_current_session, get_media_service, get_request_service,
+)
 from app.core.security import new_token, utc_now
 from app.schemas.user import UserRead
 from app.services.auth import (
@@ -190,16 +192,30 @@ async def test_app_settings_control_cookies_and_cors(application):
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
 
 
-async def test_request_file_download_does_not_require_session(client, application, auth_service):
+async def test_request_file_download_requires_session(client, application, auth_service):
     request_id = uuid4()
     service = AsyncMock()
-    media = SimpleNamespace(original_name="drawing.pdf", mime_type="application/pdf")
-    service.file.return_value = media, BytesIO(b"drawing")
+    service.file.return_value = SimpleNamespace(
+        original_name="drawing.pdf", mime_type="application/pdf"
+    ), BytesIO(b"drawing")
     application.dependency_overrides[get_request_service] = lambda: service
+    auth_service.verify_session.side_effect = AuthenticationRequiredError()
 
     response = await client.get(f"/api/v1/admin/requests/{request_id}/file")
 
-    assert response.status_code == 200
-    assert response.content == b"drawing"
-    service.file.assert_awaited_once_with(request_id)
-    auth_service.verify_session.assert_not_awaited()
+    assert response.status_code == 401
+    service.file.assert_not_awaited()
+
+
+async def test_media_requires_nonblank_alt(client, application):
+    application.dependency_overrides[get_current_session] = lambda: object()
+    application.dependency_overrides[get_media_service] = lambda: AsyncMock()
+    for alt in (None, "", "   "):
+        body = {} if alt is None else {"alt": alt}
+        response = await client.post(
+            "/api/v1/admin/media", data=body,
+            files={"file": ("image.png", b"image", "image/png")},
+        )
+        assert response.status_code == 422
+        response = await client.patch(f"/api/v1/admin/media/{uuid4()}", json=body)
+        assert response.status_code == 422
