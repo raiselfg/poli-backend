@@ -71,13 +71,13 @@ def upgrade():
         "contacts",
         sa.Column("id", sa.SmallInteger(), primary_key=True, server_default="1"),
         sa.Column("phone", sa.String(40), nullable=False),
-        sa.Column("email", sa.String(254)),
+        sa.Column("email", sa.String(254), nullable=False),
         sa.Column("address", sa.Text(), nullable=False),
-        sa.Column("latitude", sa.Numeric(9, 6)),
-        sa.Column("longitude", sa.Numeric(9, 6)),
-        sa.Column("working_hours", sa.String(255)),
-        sa.Column("telegram_url", sa.Text()),
-        sa.Column("whatsapp_url", sa.Text()),
+        sa.Column("latitude", sa.Numeric(9, 6), nullable=False),
+        sa.Column("longitude", sa.Numeric(9, 6), nullable=False),
+        sa.Column("working_hours", sa.String(255), nullable=False),
+        sa.Column("telegram_url", sa.Text(), nullable=False),
+        sa.Column("whatsapp_url", sa.Text(), nullable=False),
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
@@ -90,7 +90,14 @@ def upgrade():
         sa.CheckConstraint("latitude BETWEEN -90 AND 90", name="chk_contacts_latitude"),
         sa.CheckConstraint("longitude BETWEEN -180 AND 180", name="chk_contacts_longitude"),
     )
-    op.execute("INSERT INTO contacts (id, phone, address) VALUES (1, '', '')")
+    op.execute(
+        "INSERT INTO contacts "
+        "(id, phone, email, address, latitude, longitude, working_hours, "
+        "telegram_url, whatsapp_url) "
+        "VALUES (1, '+7 (000) 000-00-00', 'info@example.com', 'Пример адреса', "
+        "55.755800, 37.617300, 'Пн–Пт: 9:00–18:00', "
+        "'https://example.com/telegram', 'https://example.com/whatsapp')"
+    )
     op.create_table(
         "requests",
         sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),

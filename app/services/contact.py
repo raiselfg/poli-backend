@@ -27,11 +27,7 @@ class ContactService:
     async def update(self, body: ContactUpdate) -> Contact:
         contact = await self.get()
         values = body.model_dump(exclude_unset=True)
-        if any(key in values and values[key] is None for key in ("phone", "address")):
-            raise InvalidContactError
-        latitude = values.get("latitude", contact.latitude)
-        longitude = values.get("longitude", contact.longitude)
-        if (latitude is None) != (longitude is None):
+        if any(value is None for value in values.values()):
             raise InvalidContactError
         for key, value in values.items():
             setattr(contact, key, value)

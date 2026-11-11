@@ -65,20 +65,14 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             )
             assert login.status_code == 200
             assert (await client.get("/api/v1/contacts")).status_code == 200
-            await client.patch(
+            invalid_contact = await client.patch(
                 "/api/v1/admin/contacts", json={"latitude": None, "longitude": None}
             )
-            invalid_contact = await client.patch("/api/v1/admin/contacts", json={"latitude": 10})
             assert invalid_contact.status_code == 422
             updated_contact = await client.patch(
                 "/api/v1/admin/contacts", json={"latitude": 10, "longitude": 20}
             )
             assert updated_contact.status_code == 200
-            assert (
-                await client.patch(
-                    "/api/v1/admin/contacts", json={"latitude": None, "longitude": None}
-                )
-            ).status_code == 200
             response = await client.post(
                 "/api/v1/admin/media", data={"alt": "Изображение"},
                 files={"file": ("image.png", image.getvalue(), "image/png")}

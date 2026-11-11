@@ -2,20 +2,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ContactRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     phone: str
-    email: str | None
+    email: str
     address: str
-    latitude: Decimal | None
-    longitude: Decimal | None
-    working_hours: str | None
-    telegram_url: str | None
-    whatsapp_url: str | None
+    latitude: Decimal
+    longitude: Decimal
+    working_hours: str
+    telegram_url: str
+    whatsapp_url: str
     updated_at: datetime
 
 
@@ -30,3 +30,13 @@ class ContactUpdate(BaseModel):
     working_hours: str | None = Field(default=None, max_length=255)
     telegram_url: str | None = None
     whatsapp_url: str | None = None
+
+    @field_validator(
+        "phone", "email", "address", "latitude", "longitude", "working_hours",
+        "telegram_url", "whatsapp_url",
+    )
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("Null is not allowed")
+        return value

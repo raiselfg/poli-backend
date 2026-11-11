@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 
 from app.models.contact import Contact
 from app.schemas.contact import ContactUpdate
@@ -25,8 +26,19 @@ async def test_contact_update_preserves_other_fields_and_coordinates():
     db.commit.assert_awaited_once()
 
 
-@pytest.mark.parametrize("body", [{"phone": None}, {"address": None}, {"longitude": None}])
-async def test_contact_update_rejects_invalid_result(body):
+@pytest.mark.parametrize(
+    "field",
+    [
+        "phone", "email", "address", "latitude", "longitude", "working_hours", "telegram_url",
+        "whatsapp_url",
+    ],
+)
+async def test_contact_update_rejects_null(field):
+    with pytest.raises(ValidationError):
+        ContactUpdate(**{field: None})
+
+
+async def test_contact_service_rejects_null():
     db = AsyncMock()
     service = ContactService(db)
     contact = Contact(
@@ -35,7 +47,7 @@ async def test_contact_update_rejects_invalid_result(body):
     service.contacts.get = AsyncMock(return_value=contact)
 
     with pytest.raises(InvalidContactError):
-        await service.update(ContactUpdate(**body))
+        await service.update(ContactUpdate.model_construct(email=None, _fields_set={"email"}))
 
     db.commit.assert_not_awaited()
     assert contact.phone == "123"
