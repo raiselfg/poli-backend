@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.body_limit import UploadBodyLimitMiddleware
 from app.api.router import api_router, validation_error
 from app.api.routers.health import router as health_router
 from app.core.config import get_settings
@@ -19,6 +20,8 @@ app.state.settings = settings
 
 app.include_router(api_router)
 app.include_router(health_router)
+
+app.add_middleware(UploadBodyLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

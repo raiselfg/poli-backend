@@ -8,6 +8,11 @@ from app.core.config import Settings
 from app.core.security import utc_now
 from app.db.session import get_db
 from app.services.auth import AuthenticationRequiredError, AuthService, CurrentSession
+from app.services.category import CategoryService
+from app.services.contact import ContactService
+from app.services.media import MediaService
+from app.services.request import RequestService
+from app.storage.s3 import S3Storage, get_storage_settings
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -48,3 +53,31 @@ async def get_current_session(
 
 
 CurrentSessionDep = Annotated[CurrentSession, Depends(get_current_session)]
+
+
+def get_contact_service(session: Annotated[AsyncSession, Depends(get_db)]) -> ContactService:
+    return ContactService(session)
+
+
+ContactServiceDep = Annotated[ContactService, Depends(get_contact_service)]
+
+
+def get_category_service(session: Annotated[AsyncSession, Depends(get_db)]) -> CategoryService:
+    return CategoryService(session)
+
+
+CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
+
+
+def get_media_service(session: Annotated[AsyncSession, Depends(get_db)]) -> MediaService:
+    return MediaService(session, S3Storage(get_storage_settings()))
+
+
+MediaServiceDep = Annotated[MediaService, Depends(get_media_service)]
+
+
+def get_request_service(session: Annotated[AsyncSession, Depends(get_db)]) -> RequestService:
+    return RequestService(session, S3Storage(get_storage_settings()))
+
+
+RequestServiceDep = Annotated[RequestService, Depends(get_request_service)]

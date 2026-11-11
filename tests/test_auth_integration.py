@@ -5,7 +5,7 @@ import json
 import os
 import subprocess
 import sys
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.engine import make_url
 
 import app.core.config as config_module
+import app.lifespan as lifespan_module
 import app.services.auth as auth_module
 from app.core.security import token_hash
 from app.db.session import create_database
@@ -96,44 +97,35 @@ async def account(register):
     return await register("test_" + uuid4().hex[:20])
 
 
-async def test_full_http_flow_with_postgresql(settings, database, monkeypatch):
+async def test_full_http_flow_with_postgresql(settings, database, monkeypatch, account):
     monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(lifespan_module, "configure_public_read", lambda: None)
     from app.main import app
 
     monkeypatch.setattr(app.state, "settings", settings)
-    body = {"login": "test_" + uuid4().hex[:20], "password": "secret"}
-    user_id = None
-    try:
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="https://api.example.com"
-            ) as client:
-                assert (await client.get("/ready")).status_code == 200
-                response = await client.post("/api/v1/auth/register", json=body)
-                assert response.status_code == 201
-                user_id = response.json()["id"]
-                assert not client.cookies
-                assert (await client.get("/api/v1/auth/me")).status_code == 401
-                assert (await client.post("/api/v1/auth/register", json=body)).status_code == 409
-                assert (await client.post("/api/v1/auth/login", json=body)).status_code == 200
-                token = client.cookies.get("__Host-session")
-                response = await client.get("/api/v1/auth/me")
-                assert response.json()["id"] == user_id
-                response = await client.post("/api/v1/auth/logout")
-                assert response.status_code == 204
-                assert response.content == b""
-                assert len(response.headers.get_list("set-cookie")) == 1
-                assert client.cookies.get("__Host-session") is None
-                response = await client.get(
-                    "/api/v1/auth/me", headers={"Cookie": f"__Host-session={token}"}
-                )
-                assert response.status_code == 401
-    finally:
-        if user_id is not None:
-            async with database.session_factory() as db:
-                stmt = delete(User).where(User.id == UUID(user_id))
-                await db.execute(stmt)
-                await db.commit()
+    body = {"login": account.login, "password": "secret"}
+    user_id = str(account.id)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="https://api.example.com"
+        ) as client:
+            assert (await client.get("/ready")).status_code == 200
+            assert (await client.post("/api/v1/auth/register", json=body)).status_code == 404
+            assert not client.cookies
+            assert (await client.get("/api/v1/auth/me")).status_code == 401
+            assert (await client.post("/api/v1/auth/login", json=body)).status_code == 200
+            token = client.cookies.get("__Host-session")
+            response = await client.get("/api/v1/auth/me")
+            assert response.json()["id"] == user_id
+            response = await client.post("/api/v1/auth/logout")
+            assert response.status_code == 204
+            assert response.content == b""
+            assert len(response.headers.get_list("set-cookie")) == 1
+            assert client.cookies.get("__Host-session") is None
+            response = await client.get(
+                "/api/v1/auth/me", headers={"Cookie": f"__Host-session={token}"}
+            )
+            assert response.status_code == 401
 
 
 async def test_case_sensitive_registration_and_login(database, settings, account, register):

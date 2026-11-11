@@ -12,18 +12,9 @@ from app.schemas.user import UserRead
 from app.services.auth import (
     AuthenticationRequiredError,
     InvalidCredentialsError,
-    LoginAlreadyExistsError,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@router.post("/register", status_code=201, response_model=UserRead)
-async def register(body: Credentials, auth: AuthServiceDep):
-    try:
-        return await auth.register(body.login, body.password.get_secret_value())
-    except LoginAlreadyExistsError:
-        raise HTTPException(status_code=409, detail="Login already taken") from None
 
 
 @router.post("/login", response_model=UserRead)
