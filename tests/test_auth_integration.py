@@ -110,7 +110,7 @@ async def test_full_http_flow_with_postgresql(settings, database, monkeypatch, a
             transport=httpx.ASGITransport(app=app), base_url="https://api.example.com"
         ) as client:
             assert (await client.get("/ready")).status_code == 200
-            assert (await client.post("/api/v1/auth/register", json=body)).status_code == 404
+            assert (await client.post("/api/v1/auth/register", json=body)).status_code == 409
             assert not client.cookies
             assert (await client.get("/api/v1/auth/me")).status_code == 401
             assert (await client.post("/api/v1/auth/login", json=body)).status_code == 200

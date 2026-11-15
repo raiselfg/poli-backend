@@ -17,6 +17,7 @@ from app.services.auth import (
     AuthenticationRequiredError,
     AuthService,
     InvalidCredentialsError,
+    LoginAlreadyExistsError,
 )
 from tests.fakes import make_settings
 
@@ -34,6 +35,7 @@ def settings():
 def auth_service():
     service = AsyncMock(spec=AuthService)
     user = UserRead(id=uuid4(), login="User", created_at=utc_now())
+    service.register.return_value = user
     service.login.return_value = (user, new_token())
     return service
 
@@ -59,10 +61,13 @@ async def client(application):
         yield client
 
 
-async def test_registration_is_not_public(client, auth_service):
-    response = await client.post("/api/v1/auth/register", json=BODY, headers=HEADERS)
-    assert response.status_code == 404
-    auth_service.register.assert_not_awaited()
+async def test_registration_does_not_automatically_login(client, auth_service):
+    response = await client.post("/api/v1/auth/register", json=BODY)
+    assert response.status_code == 201
+    assert set(response.json()) == {"id", "login", "created_at"}
+    assert not client.cookies
+    auth_service.register.assert_awaited_once_with("User", "secret")
+    auth_service.login.assert_not_awaited()
 
 
 async def test_login_sets_cookie(client, auth_service):
@@ -135,6 +140,12 @@ async def test_expired_session_does_not_refresh_cookie(client, auth_service):
 
 
 async def test_service_errors_keep_http_contract(client, auth_service):
+    auth_service.register.side_effect = LoginAlreadyExistsError()
+    duplicate = await client.post("/api/v1/auth/register", json=BODY, headers=HEADERS)
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {"detail": "Login already taken"}
+    assert duplicate.headers["access-control-allow-origin"] == ORIGIN
+
     auth_service.login.side_effect = InvalidCredentialsError()
     result = await client.post("/api/v1/auth/login", json=BODY, headers=HEADERS)
     assert result.status_code == 401
@@ -162,6 +173,7 @@ async def test_logout_requires_authentication(client, auth_service):
 def test_api_has_only_basic_auth_routes(application):
     paths = {path for path in application.openapi()["paths"] if path.startswith("/api/v1/auth")}
     assert paths == {
+        "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/me",
         "/api/v1/auth/logout",
