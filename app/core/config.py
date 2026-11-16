@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     allowed_origins: list[str]
     allow_insecure_cookies: bool
     session_ttl_seconds: int
+    is_register_disable: bool
 
     @model_validator(mode="after")
     def validate_security(self):

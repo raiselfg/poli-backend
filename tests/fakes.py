@@ -12,6 +12,7 @@ def make_settings(**overrides) -> Settings:
         allowed_origins=["https://app.example.com"],
         allow_insecure_cookies=False,
         session_ttl_seconds=2592000,
+        is_register_disable=False,
     )
     values.update(overrides)
     return Settings(_env_file=None, **values)

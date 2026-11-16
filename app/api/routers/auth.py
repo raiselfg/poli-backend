@@ -19,7 +19,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", status_code=201, response_model=UserRead)
-async def register(body: Credentials, auth: AuthServiceDep):
+async def register(body: Credentials, auth: AuthServiceDep, settings: SettingsDep):
+    if settings.is_register_disable:
+        raise HTTPException(status_code=403, detail="Register is disabled now")
     try:
         return await auth.register(body.login, body.password.get_secret_value())
     except LoginAlreadyExistsError:

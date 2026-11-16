@@ -9,13 +9,12 @@ from app.core.config import get_settings
 from app.lifespan import lifespan
 
 
-settings = get_settings()
-
 app = FastAPI(
     lifespan=lifespan,
     exception_handlers={RequestValidationError: validation_error},
 )
 
+settings = get_settings()
 app.state.settings = settings
 
 app.include_router(api_router)
