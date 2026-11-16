@@ -17,7 +17,7 @@ async def get_contacts(service: ContactServiceDep):
 
 @router.patch("/admin/contacts", response_model=ContactRead)
 async def update_contacts(
-    body: ContactUpdate, service: ContactServiceDep, current_session: CurrentSessionDep
+    body: ContactUpdate, service: ContactServiceDep, _current_session: CurrentSessionDep
 ):
     try:
         return await service.update(body)

@@ -66,7 +66,7 @@ async def create_request(
 
 @router.get("/admin/requests", response_model=list[RequestListItem])
 async def list_requests(
-    current_session: CurrentSessionDep,
+    _current_session: CurrentSessionDep,
     service: RequestServiceDep,
     status: RequestStatus | None = None,
 ):
@@ -75,7 +75,7 @@ async def list_requests(
 
 @router.get("/admin/requests/{request_id}", response_model=RequestDetail)
 async def get_request(
-    request_id: UUID, current_session: CurrentSessionDep, service: RequestServiceDep
+    request_id: UUID, _current_session: CurrentSessionDep, service: RequestServiceDep
 ):
     try:
         return await service.detail(request_id)

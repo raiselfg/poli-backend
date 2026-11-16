@@ -26,13 +26,13 @@ async def public_categories(service: CategoryServiceDep):
 
 
 @router.get("/admin/categories", response_model=list[CategoryAdmin])
-async def list_categories(service: CategoryServiceDep, current_session: CurrentSessionDep):
+async def list_categories(service: CategoryServiceDep, _current_session: CurrentSessionDep):
     return await service.list()
 
 
 @router.put("/admin/categories/order", status_code=204)
 async def reorder_categories(
-    body: CategoryOrder, service: CategoryServiceDep, current_session: CurrentSessionDep
+    body: CategoryOrder, service: CategoryServiceDep, _current_session: CurrentSessionDep
 ):
     try:
         await service.reorder(body.ids)
@@ -43,7 +43,7 @@ async def reorder_categories(
 
 @router.post("/admin/categories", status_code=201, response_model=CategoryAdmin)
 async def create_category(
-    body: CategoryCreate, service: CategoryServiceDep, current_session: CurrentSessionDep
+    body: CategoryCreate, service: CategoryServiceDep, _current_session: CurrentSessionDep
 ):
     try:
         return await service.create(body)
@@ -55,7 +55,7 @@ async def create_category(
 
 @router.get("/admin/categories/{category_id}", response_model=CategoryAdmin)
 async def get_category(
-    category_id: UUID, service: CategoryServiceDep, current_session: CurrentSessionDep
+    category_id: UUID, service: CategoryServiceDep, _current_session: CurrentSessionDep
 ):
     try:
         return await service.get(category_id)
@@ -68,7 +68,7 @@ async def update_category(
     category_id: UUID,
     body: CategoryUpdate,
     service: CategoryServiceDep,
-    current_session: CurrentSessionDep,
+    _сurrent_session: CurrentSessionDep,
 ):
     try:
         return await service.update(category_id, body)
@@ -82,7 +82,7 @@ async def update_category(
 
 @router.delete("/admin/categories/{category_id}", status_code=204)
 async def delete_category(
-    category_id: UUID, service: CategoryServiceDep, current_session: CurrentSessionDep
+    category_id: UUID, service: CategoryServiceDep, _current_session: CurrentSessionDep
 ):
     try:
         await service.delete(category_id)

@@ -13,13 +13,13 @@ router = APIRouter(prefix="/admin/media", tags=["media"])
 
 
 @router.get("", response_model=list[MediaRead])
-async def list_media(current_session: CurrentSessionDep, service: MediaServiceDep):
+async def list_media(_current_session: CurrentSessionDep, service: MediaServiceDep):
     return await service.list()
 
 
 @router.post("", response_model=MediaRead, status_code=201)
 async def upload_media(
-    current_session: CurrentSessionDep,
+    _current_session: CurrentSessionDep,
     service: MediaServiceDep,
     file: Annotated[UploadFile, File()],
     alt: Annotated[str, Form(min_length=1, max_length=200)],
@@ -53,7 +53,7 @@ async def upload_media(
 
 @router.patch("/{media_id}", response_model=MediaRead)
 async def update_media(
-    media_id: UUID, body: MediaUpdate, current_session: CurrentSessionDep, service: MediaServiceDep
+    media_id: UUID, body: MediaUpdate, _current_session: CurrentSessionDep, service: MediaServiceDep
 ):
     try:
         return await service.update(media_id, body.alt)
@@ -63,7 +63,7 @@ async def update_media(
 
 @router.delete("/{media_id}", status_code=204)
 async def delete_media(
-    media_id: UUID, current_session: CurrentSessionDep, service: MediaServiceDep
+    media_id: UUID, _current_session: CurrentSessionDep, service: MediaServiceDep
 ):
     try:
         await service.delete(media_id)
