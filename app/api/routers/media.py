@@ -35,6 +35,9 @@ async def upload_media(
     try:
         try:
             await run_in_threadpool(optimize_catalog_image, checked)
+            width, height = checked.width, checked.height
+            if width is None or height is None:
+                raise InvalidFileError
         except InvalidFileError:
             raise HTTPException(status_code=415, detail="Unsupported file") from None
         return await service.upload(
@@ -42,8 +45,8 @@ async def upload_media(
             checked.original_name,
             checked.mime_type,
             checked.size,
-            checked.width,
-            checked.height,
+            width,
+            height,
             alt,
         )
     finally:
