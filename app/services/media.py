@@ -53,8 +53,13 @@ class MediaService:
             height=height,
             alt=alt,
         )
-        self.media.add(media)
-        await self.db.commit()
+        try:
+            self.media.add(media)
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            await self.storage.delete(bucket, key)
+            raise
         await self.db.refresh(media)
         return media
 
