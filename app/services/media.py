@@ -74,19 +74,26 @@ class MediaService:
         await self.db.refresh(media)
         return self._response(media)
 
-    async def delete(self, media_id: UUID) -> None:
+    async def delete(self, media_id: UUID, *, category_id: UUID | None = None) -> None:
         media = await self.get(media_id)
-        if await self.media.used_by_category(media_id) or await self.media.used_by_requests(
-            [media_id]
-        ):
-            raise MediaInUseError
         try:
+            if category_id is not None:
+                await self.media.detach_from_category(media_id, category_id)
+            if await self.media.used_by_category(media_id) or await self.media.used_by_requests(
+                [media_id]
+            ):
+                raise MediaInUseError
             await self.media.delete(media)
+            # Check foreign keys before deleting the object. Roll back if storage rejects deletion.
+            await self.db.flush()
+            await self.storage.delete(self.storage.settings.s3_public_bucket, media.object_key)
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
             raise MediaInUseError from None
-        await self.storage.delete(self.storage.settings.s3_public_bucket, media.object_key)
+        except Exception:
+            await self.db.rollback()
+            raise
 
     def _response(self, media: Media) -> MediaRead:
         return MediaRead(

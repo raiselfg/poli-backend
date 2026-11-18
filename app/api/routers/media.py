@@ -66,10 +66,13 @@ async def update_media(
 
 @router.delete("/{media_id}", status_code=204)
 async def delete_media(
-    media_id: UUID, _current_session: CurrentSessionDep, service: MediaServiceDep
+    media_id: UUID,
+    _current_session: CurrentSessionDep,
+    service: MediaServiceDep,
+    category_id: UUID | None = None,
 ):
     try:
-        await service.delete(media_id)
+        await service.delete(media_id, category_id=category_id)
     except MediaNotFoundError:
         raise HTTPException(status_code=404, detail="Media not found") from None
     except MediaInUseError:

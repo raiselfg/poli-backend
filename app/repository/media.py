@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import CATALOG_PREFIX, CategoryMedia, Media
@@ -40,6 +40,13 @@ class MediaRepository:
 
     def add(self, media: Media) -> None:
         self.db.add(media)
+
+    async def detach_from_category(self, media_id: UUID, category_id: UUID) -> None:
+        stmt = delete(CategoryMedia).where(
+            CategoryMedia.media_id == media_id,
+            CategoryMedia.category_id == category_id,
+        )
+        await self.db.execute(stmt)
 
     async def delete(self, media: Media) -> None:
         await self.db.delete(media)
