@@ -1,8 +1,8 @@
 from functools import lru_cache
 from urllib.parse import urlsplit
-from uuid import UUID
 
 import boto3
+from botocore.config import Config
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.concurrency import run_in_threadpool
@@ -31,6 +31,9 @@ class StorageSettings(BaseSettings):
             raise ValueError("Public and private buckets must differ")
         return self
 
+    def public_url(self, object_key: str) -> str:
+        return f"{self.s3_endpoint_url.rstrip('/')}/{self.s3_public_bucket}/{object_key}"
+
 
 @lru_cache
 def get_storage_settings() -> StorageSettings:
@@ -46,10 +49,8 @@ class S3Storage:
             aws_access_key_id=settings.s3_access_key_id.get_secret_value(),
             aws_secret_access_key=settings.s3_secret_access_key.get_secret_value(),
             region_name="eu-central-1",
+            config=Config(s3={"addressing_style": "path"}),
         )
-
-    def url(self, bucket: str, namespace: str, media_id: UUID) -> str:
-        return f"{self.settings.s3_endpoint_url.rstrip('/')}/{bucket}/{namespace}/{media_id}"
 
     async def upload(self, bucket: str, key: str, file, mime_type: str) -> None:
         await run_in_threadpool(

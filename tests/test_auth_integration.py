@@ -99,7 +99,7 @@ async def account(register):
 
 async def test_full_http_flow_with_postgresql(settings, database, monkeypatch, account):
     monkeypatch.setattr(config_module, "get_settings", lambda: settings)
-    monkeypatch.setattr(lifespan_module, "configure_public_read", lambda: None)
+    monkeypatch.setattr(lifespan_module, "check_buckets", lambda: None)
     from app.main import app
 
     monkeypatch.setattr(app.state, "settings", settings)

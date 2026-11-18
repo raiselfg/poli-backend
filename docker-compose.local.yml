@@ -18,18 +18,21 @@ services:
       retries: 10
 
   s3:
-    image: chrislusf/seaweedfs:4.53
+    image: rustfs/rustfs:1.0.6
     container_name: poli-s3
-    command: ["mini", "-dir=/data", "-ip=seaweedfs", "-s3.autoCreateBucket=false"]
+    command: ["/data"]
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
-      S3_BUCKET: ${S3_PUBLIC_BUCKET},${S3_PRIVATE_BUCKET}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY}
+      RUSTFS_REGION: eu-central-1
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CORS_ALLOWED_ORIGINS: "*"
     ports:
-      - "127.0.0.1:${S3_PORT}:8333"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
-      - seaweedfs_data:/data
+      - rustfs_data:/data
 
 volumes:
   postgres_data:
-  seaweedfs_data:
+  rustfs_data:

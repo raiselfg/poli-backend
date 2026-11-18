@@ -63,7 +63,7 @@ ContactServiceDep = Annotated[ContactService, Depends(get_contact_service)]
 
 
 def get_category_service(session: Annotated[AsyncSession, Depends(get_db)]) -> CategoryService:
-    return CategoryService(session)
+    return CategoryService(session, get_storage_settings())
 
 
 CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]

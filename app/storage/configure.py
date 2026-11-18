@@ -1,4 +1,4 @@
-"""Allow anonymous object reads in the configured buckets."""
+"""Check bucket availability and provide a command to configure public catalog reads."""
 
 import json
 
@@ -36,16 +36,26 @@ def allow_public_read(client, bucket: str) -> None:
     client.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
 
 
-def configure_public_read() -> None:
+def check_buckets() -> None:
     settings = get_storage_settings()
     storage = S3Storage(settings)
+    client = storage.client
     for bucket in (settings.s3_public_bucket, settings.s3_private_bucket):
-        allow_public_read(storage.client, bucket)
+        try:
+            client.head_bucket(Bucket=bucket)
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") not in {"NoSuchBucket", "404"}:
+                raise
+            raise RuntimeError(
+                f"Create S3 bucket {bucket!r} before starting the application"
+            ) from error
 
 
 def main() -> None:
-    configure_public_read()
-    print("Anonymous reads enabled for the configured buckets.")
+    settings = get_storage_settings()
+    storage = S3Storage(settings)
+    allow_public_read(storage.client, settings.s3_public_bucket)
+    print("Enabled anonymous reads for the catalog bucket.")
 
 
 if __name__ == "__main__":

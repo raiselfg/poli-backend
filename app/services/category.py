@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import utc_now
 from app.models.category import Category
+from app.models.media import CATALOG_PREFIX, Media
 from app.repository.category import CategoryRepository
 from app.repository.media import MediaRepository
 from app.schemas.category import CategoryAdmin, CategoryCreate, CategoryImage, CategoryUpdate
+from app.storage.s3 import StorageSettings
 
 
 class CategoryNotFoundError(Exception):
@@ -27,8 +29,9 @@ class InvalidCategoryOrderError(Exception):
 
 
 class CategoryService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, storage_settings: StorageSettings):
         self.db = db
+        self.storage_settings = storage_settings
         self.categories = CategoryRepository(db)
         self.media = MediaRepository(db)
 
@@ -98,17 +101,29 @@ class CategoryService:
         if not ids:
             return
         media = await self.media.by_ids(ids)
-        if len(media) != len(ids) or await self.media.used_by_requests(ids):
+        if len(media) != len(ids) or any(
+            not item.object_key.startswith(CATALOG_PREFIX) for item in media
+        ):
+            raise InvalidCategoryMediaError
+        if await self.media.used_by_requests(ids):
             raise InvalidCategoryMediaError
 
-    @staticmethod
-    def _response(category, images) -> CategoryAdmin:
+    def _response(self, category: Category, images: list[Media]) -> CategoryAdmin:
         return CategoryAdmin(
             id=category.id,
             slug=category.slug,
             title=category.title,
             description=category.description,
-            images=[CategoryImage.model_validate(image) for image in images],
+            images=[
+                CategoryImage(
+                    id=image.id,
+                    url=self.storage_settings.public_url(image.object_key),
+                    alt=image.alt,
+                    width=image.width,
+                    height=image.height,
+                )
+                for image in images
+            ],
             is_published=category.is_published,
             sort_order=category.sort_order,
             created_at=category.created_at,

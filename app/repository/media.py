@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.media import CategoryMedia, Media
+from app.models.media import CATALOG_PREFIX, CategoryMedia, Media
 from app.models.request import Request
 
 
@@ -24,9 +24,11 @@ class MediaRepository:
     async def by_id(self, media_id: UUID) -> Media | None:
         return await self.db.get(Media, media_id)
 
-    async def list_catalog(self, url_prefix: str) -> list[Media]:
-        stmt = select(Media).where(Media.url.startswith(url_prefix, autoescape=True)).order_by(
-            Media.created_at.desc(), Media.id.desc()
+    async def list_catalog(self) -> list[Media]:
+        stmt = (
+            select(Media)
+            .where(Media.object_key.startswith(CATALOG_PREFIX, autoescape=True))
+            .order_by(Media.created_at.desc(), Media.id.desc())
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

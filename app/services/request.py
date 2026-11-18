@@ -44,10 +44,11 @@ class RequestService:
             stream, original_name, mime_type, size, width, height = file
             media_id = uuid4()
             bucket = self.storage.settings.s3_private_bucket
-            await self.storage.upload(bucket, f"requests/{media_id}", stream, mime_type)
+            key = f"requests/{media_id}"
+            await self.storage.upload(bucket, key, stream, mime_type)
             media = Media(
                 id=media_id,
-                url=self.storage.url(bucket, "requests", media_id),
+                object_key=key,
                 original_name=original_name,
                 mime_type=mime_type,
                 size_bytes=size,
@@ -129,9 +130,7 @@ class RequestService:
         media = await self.media.by_id(request.media_id)
         if media is None:
             raise RequestNotFoundError
-        obj = await self.storage.get(
-            self.storage.settings.s3_private_bucket, f"requests/{media.id}"
-        )
+        obj = await self.storage.get(self.storage.settings.s3_private_bucket, media.object_key)
         return media, obj["Body"]
 
     async def update(self, request_id: UUID, status: str) -> RequestDetail:

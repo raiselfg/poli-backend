@@ -1,4 +1,4 @@
-"""Exercise site API with dedicated PostgreSQL and SeaweedFS test instances."""
+"""Exercise site API with dedicated PostgreSQL and RustFS test instances."""
 
 import io
 import os
@@ -29,16 +29,18 @@ pytestmark = pytest.mark.skipif(
 
 
 async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F811
+    suffix = uuid4().hex
     storage_settings = StorageSettings(
         _env_file=None,
         s3_endpoint_url=os.environ["TEST_S3_ENDPOINT"],
         s3_access_key_id="local-access-key",
         s3_secret_access_key="local-secret-key",
-        s3_public_bucket="poli-public",
-        s3_private_bucket="poli-private",
+        s3_public_bucket=f"test-images-{suffix}",
+        s3_private_bucket=f"test-requests-{suffix}",
     )
     monkeypatch.setattr(dependencies, "get_storage_settings", lambda: storage_settings)
-    app = FastAPI()
+    monkeypatch.setattr(storage_configure, "get_storage_settings", lambda: storage_settings)
+    app = FastAPI(lifespan=lifespan)
     app.include_router(api_router)
     app.add_middleware(UploadBodyLimitMiddleware)
     app.state.settings = settings
@@ -55,10 +57,22 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
     attachment_id = None
     image = io.BytesIO()
     Image.new("RGB", (2, 3), "red").save(image, format="PNG")
+    storage = S3Storage(storage_settings)
+    created = []
     try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="https://test"
-        ) as client:
+        for bucket in (storage_settings.s3_public_bucket, storage_settings.s3_private_bucket):
+            storage.client.create_bucket(
+                Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": "eu-central-1"}
+            )
+            created.append(bucket)
+
+        storage_configure.main()
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="https://test"
+            ) as client,
+        ):
             assert (await client.get("/api/v1/admin/media")).status_code == 401
             login = await client.post(
                 "/api/v1/auth/login", json={"login": account.login, "password": "secret"}
@@ -138,20 +152,21 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             attachment_id = detail.json()["file"]["id"]
             async with httpx.AsyncClient(trust_env=False) as cdn:
                 direct = await cdn.get(
-                    f"{storage_settings.s3_endpoint_url}/poli-private/requests/{attachment_id}"
+                    f"{storage_settings.s3_endpoint_url}/{storage_settings.s3_private_bucket}"
+                    f"/requests/{attachment_id}"
                 )
-            assert direct.status_code == 200
-            assert direct.content == b"%PDF-1.4\ntest"
+            assert direct.status_code == 403
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="https://test"
             ) as anonymous_client:
                 anonymous_download = await anonymous_client.get(
                     f"/api/v1/admin/requests/{request_id}/file"
                 )
-            assert anonymous_download.status_code == 200
-            assert anonymous_download.content == b"%PDF-1.4\ntest"
+            assert anonymous_download.status_code == 401
             downloaded = await client.get(f"/api/v1/admin/requests/{request_id}/file")
+            assert downloaded.status_code == 200
             assert downloaded.content == b"%PDF-1.4\ntest"
+            assert downloaded.headers["cache-control"] == "private, no-store"
             response = await client.patch(
                 f"/api/v1/admin/requests/{request_id}", json={"status": "completed"}
             )
@@ -190,14 +205,15 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                     stmt = delete(Media).where(Media.id == item_id)
                     await db.execute(stmt)
             await db.commit()
-        storage = S3Storage(storage_settings)
         if media_id:
-            await storage.delete("poli-public", f"catalog/{media_id}")
+            await storage.delete(storage_settings.s3_public_bucket, f"catalog/{media_id}")
         if attachment_id:
-            await storage.delete("poli-private", f"requests/{attachment_id}")
+            await storage.delete(storage_settings.s3_private_bucket, f"requests/{attachment_id}")
+        for bucket in created:
+            storage.client.delete_bucket(Bucket=bucket)
 
 
-async def test_lifespan_makes_both_buckets_public(database, settings, monkeypatch):  # noqa: F811
+async def test_catalog_policy_is_applied_outside_startup(database, settings, monkeypatch):  # noqa: F811
     suffix = uuid4().hex
     storage_settings = StorageSettings(
         _env_file=None,
@@ -221,27 +237,26 @@ async def test_lifespan_makes_both_buckets_public(database, settings, monkeypatc
 
         app = FastAPI(lifespan=lifespan)
         app.state.settings = settings
+        endpoint = storage_settings.s3_endpoint_url
+        private_url = f"{endpoint}/{storage_settings.s3_private_bucket}/test/file"
+        public_url = f"{endpoint}/{storage_settings.s3_public_bucket}/test/file"
         async with httpx.AsyncClient(trust_env=False) as client:
-            for bucket in buckets:
-                response = await client.get(
-                    f"{storage_settings.s3_endpoint_url}/{bucket}/test/file"
-                )
-                assert response.status_code == 403
             async with app.router.lifespan_context(app):
-                for bucket in buckets:
-                    response = await client.get(
-                        f"{storage_settings.s3_endpoint_url}/{bucket}/test/file"
-                    )
-                    assert response.status_code == 200
-                    assert response.content == b"test"
-                    unauthorized_write = await client.put(
-                        f"{storage_settings.s3_endpoint_url}/{bucket}/test/other", content=b"test"
-                    )
-                    assert unauthorized_write.status_code == 403
-                    unauthorized_delete = await client.delete(
-                        f"{storage_settings.s3_endpoint_url}/{bucket}/test/file"
-                    )
-                    assert unauthorized_delete.status_code == 403
+                assert (await client.get(private_url)).status_code == 403
+                assert (await client.get(public_url)).status_code == 403
+
+            storage_configure.main()
+            assert (await client.get(private_url)).status_code == 403
+            response = await client.get(public_url)
+            assert response.status_code == 200
+            assert response.content == b"test"
+            for bucket in buckets:
+                unauthorized_write = await client.put(
+                    f"{endpoint}/{bucket}/test/other", content=b"test"
+                )
+                assert unauthorized_write.status_code == 403
+                unauthorized_delete = await client.delete(f"{endpoint}/{bucket}/test/file")
+                assert unauthorized_delete.status_code == 403
     finally:
         for bucket in created:
             storage.client.delete_object(Bucket=bucket, Key="test/file")

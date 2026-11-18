@@ -51,25 +51,30 @@ def test_storage_uses_one_endpoint_for_client_and_file_links(monkeypatch):
     media_id = uuid4()
 
     assert storage.client.meta.endpoint_url.rstrip("/") == "https://cdn.example.com"
-    assert storage.url("public", "catalog", media_id) == (
+    assert storage.settings.public_url(f"catalog/{media_id}") == (
         f"https://cdn.example.com/public/catalog/{media_id}"
     )
 
 
-def test_configure_public_read_updates_both_buckets(monkeypatch):
+def test_startup_checks_buckets_without_changing_policy(monkeypatch):
     from types import SimpleNamespace
 
     import app.storage.configure as configure
 
     settings = SimpleNamespace(s3_public_bucket="images", s3_private_bucket="requests")
-    client = object()
+    client = Mock()
     allow = Mock()
     monkeypatch.setattr(configure, "get_storage_settings", lambda: settings)
     monkeypatch.setattr(configure, "S3Storage", lambda _: SimpleNamespace(client=client))
     monkeypatch.setattr(configure, "allow_public_read", allow)
 
-    configure.configure_public_read()
+    configure.check_buckets()
 
-    assert allow.call_count == 2
-    allow.assert_any_call(client, "images")
-    allow.assert_any_call(client, "requests")
+    assert client.head_bucket.call_count == 2
+    client.head_bucket.assert_any_call(Bucket="images")
+    client.head_bucket.assert_any_call(Bucket="requests")
+    allow.assert_not_called()
+
+    configure.main()
+
+    allow.assert_called_once_with(client, "images")

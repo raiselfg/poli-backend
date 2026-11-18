@@ -104,7 +104,8 @@ async def download_request_file(
         chunks(),
         media_type=media.mime_type,
         headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            "Cache-Control": "private, no-store",
         },
     )
 

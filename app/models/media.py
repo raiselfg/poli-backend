@@ -16,18 +16,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
+CATALOG_PREFIX = "catalog/"
+
 
 class Media(Base):
     __tablename__ = "media"
     __table_args__ = (
-        CheckConstraint("url ~ '^https?://'", name="chk_media_url"),
         CheckConstraint("size_bytes > 0", name="chk_media_size"),
         CheckConstraint("width IS NULL OR width > 0", name="chk_media_width"),
         CheckConstraint("height IS NULL OR height > 0", name="chk_media_height"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
-    url: Mapped[str] = mapped_column(Text, unique=True)
+    object_key: Mapped[str] = mapped_column(Text, unique=True)
     original_name: Mapped[str] = mapped_column(String(255))
     mime_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(BigInteger)

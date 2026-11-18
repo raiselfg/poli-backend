@@ -12,10 +12,8 @@ async def test_database_failure_after_upload():
     db = AsyncMock(spec=AsyncSession)
     storage = Mock(upload=AsyncMock(), delete=AsyncMock())
     storage.settings.s3_public_bucket = "public"
-    storage.url.return_value = "https://storage.example.com/image.png"
     calls = Mock()
     calls.attach_mock(storage.upload, "upload")
-    calls.attach_mock(storage.url, "url")
     calls.attach_mock(db.commit, "commit")
     calls.attach_mock(db.rollback, "rollback")
     calls.attach_mock(storage.delete, "delete")
@@ -27,7 +25,7 @@ async def test_database_failure_after_upload():
         await MediaService(db, storage).upload(stream, "image.png", "image/png", 4, 1, 1, "Alt")
 
     assert exc.value is error
-    expected_order = ["upload", "url", "commit", "rollback", "delete"]
+    expected_order = ["upload", "commit", "rollback", "delete"]
     assert [call[0] for call in calls.mock_calls] == expected_order
     bucket, key = storage.upload.await_args.args[:2]
     storage.delete.assert_awaited_once_with(bucket, key)
