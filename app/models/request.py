@@ -27,11 +27,25 @@ class Request(Base):
     category_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL", name="fk_requests_category")
     )
-    media_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("media.id", ondelete="RESTRICT", name="fk_requests_media"), unique=True
-    )
     status: Mapped[str] = mapped_column(String(20), server_default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class RequestAttachment(Base):
+    __tablename__ = "request_attachments"
+    __table_args__ = (
+        CheckConstraint("position BETWEEN 0 AND 2", name="chk_request_attachments_position"),
+    )
+
+    request_id: Mapped[UUID] = mapped_column(
+        ForeignKey("requests.id", ondelete="CASCADE", name="fk_request_attachments_request"),
+        primary_key=True,
+    )
+    position: Mapped[int] = mapped_column(primary_key=True)
+    media_id: Mapped[UUID] = mapped_column(
+        ForeignKey("media.id", ondelete="RESTRICT", name="fk_request_attachments_media"),
+        unique=True,
     )

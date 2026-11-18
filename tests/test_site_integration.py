@@ -54,7 +54,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
     category_id = None
     media_id = None
     request_id = None
-    attachment_id = None
+    attachment_ids = []
     image = io.BytesIO()
     Image.new("RGB", (2, 3), "red").save(image, format="PNG")
     storage = S3Storage(storage_settings)
@@ -124,36 +124,77 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             too_large = await client.post(
                 "/api/v1/requests",
                 data={"name": "Test", "phone": "123"},
-                files={"file": ("drawing.pdf", b"x" * (10 * 1024 * 1024 + 1), "application/pdf")},
+                files={"file": ("drawing.pdf", b"x" * (5 * 1024 * 1024 + 1), "application/pdf")},
             )
             assert too_large.status_code == 413
             too_large_request = await client.post(
                 "/api/v1/requests",
-                data={"name": "Test", "phone": "123", "comment": "x" * (11 * 1024 * 1024)},
+                data={"name": "Test", "phone": "123", "comment": "x" * (16 * 1024 * 1024 + 1)},
             )
             assert too_large_request.status_code == 413
 
             async def oversized_stream():
-                for _ in range(12):
+                for _ in range(17):
                     yield b"x" * (1024 * 1024)
 
             streamed = await client.post("/api/v1/requests", content=oversized_stream())
             assert streamed.status_code == 413
+            upload = S3Storage.upload
+            attempts = []
+
+            async def fail_second_upload(self, bucket, key, stream, mime_type):
+                attempts.append(key)
+                if len(attempts) == 2:
+                    raise OSError("Test storage failure")
+                await upload(self, bucket, key, stream, mime_type)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(S3Storage, "upload", fail_second_upload)
+                with pytest.raises(OSError, match="Test storage failure"):
+                    await client.post(
+                        "/api/v1/requests",
+                        data={"name": "Incomplete upload", "phone": "123"},
+                        files=[
+                            ("file", ("terms.pdf", b"%PDF-1.4\ntest")),
+                            ("file", ("drawing.dwg", b"AC1027test")),
+                        ],
+                    )
+            stored = storage.client.list_objects_v2(Bucket=storage_settings.s3_private_bucket)
+            assert not stored.get("Contents")
+            listed = await client.get("/api/v1/admin/requests")
+            assert all(item["name"] != "Incomplete upload" for item in listed.json())
+
+            uploads = [
+                ("terms.pdf", b"%PDF-1.4\ntest", "application/pdf"),
+                ("product.png", image.getvalue(), "image/png"),
+                ("drawing.dwg", b"AC1027test", "application/acad"),
+            ]
+            uploads = [
+                (name, data.ljust(5 * 1024 * 1024, b"\x00"), mime)
+                for name, data, mime in uploads
+            ]
             response = await client.post(
                 "/api/v1/requests",
                 data={"name": "Test", "phone": "123", "categoryId": category_id},
-                files={"file": ("drawing.pdf", b"%PDF-1.4\ntest", "application/pdf")},
+                files=[("file", upload) for upload in uploads],
             )
             assert response.status_code == 201, response.text
             request_id = response.json()["id"]
             assert response.json()["hasFile"]
             detail = await client.get(f"/api/v1/admin/requests/{request_id}")
             assert detail.status_code == 200, detail.text
-            attachment_id = detail.json()["file"]["id"]
+            attachments = detail.json()["files"]
+            attachment_ids = [attachment["id"] for attachment in attachments]
+            assert [attachment["originalName"] for attachment in attachments] == [
+                name for name, _, _ in uploads
+            ]
+            assert detail.json()["file"]["id"] == attachment_ids[0]
+            listed = await client.get("/api/v1/admin/requests")
+            assert any(item["id"] == request_id and item["hasFile"] for item in listed.json())
             async with httpx.AsyncClient(trust_env=False) as cdn:
                 direct = await cdn.get(
                     f"{storage_settings.s3_endpoint_url}/{storage_settings.s3_private_bucket}"
-                    f"/requests/{attachment_id}"
+                    f"/requests/{attachment_ids[0]}"
                 )
             assert direct.status_code == 403
             async with httpx.AsyncClient(
@@ -165,8 +206,16 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert anonymous_download.status_code == 401
             downloaded = await client.get(f"/api/v1/admin/requests/{request_id}/file")
             assert downloaded.status_code == 200
-            assert downloaded.content == b"%PDF-1.4\ntest"
+            assert downloaded.content == uploads[0][1]
             assert downloaded.headers["cache-control"] == "private, no-store"
+            for attachment, (_, data, _) in zip(attachments, uploads, strict=True):
+                downloaded = await client.get(attachment["downloadUrl"])
+                assert downloaded.status_code == 200
+                assert downloaded.content == data
+            unrelated = await client.get(
+                f"/api/v1/admin/requests/{request_id}/file", params={"file_id": media_id}
+            )
+            assert unrelated.status_code == 404
             response = await client.patch(
                 f"/api/v1/admin/requests/{request_id}", json={"status": "completed"}
             )
@@ -189,7 +238,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             response = await client.post(
                 "/api/v1/requests",
                 data={"name": "Test", "phone": "123"},
-                files=[("file", ("a.pdf", b"%PDF-1.4\na")), ("file", ("b.pdf", b"%PDF-1.4\nb"))],
+                files=[("file", (f"{index}.pdf", b"%PDF-1.4\nx")) for index in range(4)],
             )
             assert response.status_code == 400
     finally:
@@ -200,14 +249,14 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             if category_id:
                 stmt = delete(Category).where(Category.id == category_id)
                 await db.execute(stmt)
-            for item_id in (media_id, attachment_id):
+            for item_id in (media_id, *attachment_ids):
                 if item_id:
                     stmt = delete(Media).where(Media.id == item_id)
                     await db.execute(stmt)
             await db.commit()
         if media_id:
             await storage.delete(storage_settings.s3_public_bucket, f"catalog/{media_id}")
-        if attachment_id:
+        for attachment_id in attachment_ids:
             await storage.delete(storage_settings.s3_private_bucket, f"requests/{attachment_id}")
         for bucket in created:
             storage.client.delete_bucket(Bucket=bucket)

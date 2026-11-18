@@ -44,6 +44,7 @@ class RequestDetail(BaseModel):
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")
     file: RequestFile | None
+    files: list[RequestFile]
 
 
 class RequestUpdate(BaseModel):

@@ -14,7 +14,7 @@
     {
       "Effect": "Allow",
       "Action": ["s3:DeleteObject"],
-      "Resource": ["arn:aws:s3:::poli-public/catalog/*"]
+      "Resource": ["arn:aws:s3:::poli-public/catalog/*", "arn:aws:s3:::poli-private/requests/*"]
     }
   ]
 }

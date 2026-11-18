@@ -1,3 +1,4 @@
+import logging
 from typing import BinaryIO
 from uuid import UUID, uuid4
 
@@ -10,6 +11,8 @@ from app.repository.media import MediaRepository
 from app.repository.request import RequestRepository
 from app.schemas.request import RequestCreated, RequestDetail, RequestFile, RequestListItem
 from app.storage.s3 import S3Storage
+
+logger = logging.getLogger(__name__)
 
 
 class RequestNotFoundError(Exception):
@@ -34,48 +37,58 @@ class RequestService:
         phone: str,
         comment: str | None,
         category_id: UUID | None,
-        file: tuple[BinaryIO, str, str, int, int | None, int | None] | None,
+        files: list[tuple[BinaryIO, str, str, int, int | None, int | None]],
     ) -> RequestCreated:
         if category_id is not None and await self.categories.by_id(category_id) is None:
             raise RequestCategoryNotFoundError
-        request_id = uuid4()
-        media_id = None
-        if file is not None:
-            stream, original_name, mime_type, size, width, height = file
-            media_id = uuid4()
-            bucket = self.storage.settings.s3_private_bucket
-            key = f"requests/{media_id}"
-            await self.storage.upload(bucket, key, stream, mime_type)
-            media = Media(
-                id=media_id,
-                object_key=key,
-                original_name=original_name,
-                mime_type=mime_type,
-                size_bytes=size,
-                width=width,
-                height=height,
-            )
-            self.media.add(media)
         request = Request(
-            id=request_id,
+            id=uuid4(),
             name=name,
             phone=phone,
             comment=comment,
             category_id=category_id,
-            media_id=media_id,
         )
-        self.requests.add(request)
-        await self.db.commit()
+        bucket = self.storage.settings.s3_private_bucket
+        attachment_ids: list[UUID] = []
+        try:
+            for stream, original_name, mime_type, size, width, height in files:
+                media_id = uuid4()
+                media = Media(
+                    id=media_id,
+                    object_key=f"requests/{media_id}",
+                    original_name=original_name,
+                    mime_type=mime_type,
+                    size_bytes=size,
+                    width=width,
+                    height=height,
+                )
+                attachment_ids.append(media_id)
+                await self.storage.upload(bucket, media.object_key, stream, mime_type)
+                self.media.add(media)
+            self.requests.add(request)
+            if attachment_ids:
+                await self.db.flush()
+                self.requests.attach_files(request.id, attachment_ids)
+            await self.db.commit()
+        except BaseException:
+            await self.db.rollback()
+            for media_id in attachment_ids:
+                try:
+                    await self.storage.delete(bucket, f"requests/{media_id}")
+                except Exception:
+                    logger.exception("Failed to clean up request attachment %s", media_id)
+            raise
         await self.db.refresh(request)
         return RequestCreated(
             id=request.id,
             status=request.status,
-            has_file=media_id is not None,
+            has_file=bool(attachment_ids),
             created_at=request.created_at,
         )
 
     async def list(self, status: str | None) -> list[RequestListItem]:
         requests = await self.requests.list(status)
+        with_files = await self.requests.ids_with_files(status)
         return [
             RequestListItem(
                 id=item.id,
@@ -84,7 +97,7 @@ class RequestService:
                 comment=item.comment,
                 category_id=item.category_id,
                 status=item.status,
-                has_file=item.media_id is not None,
+                has_file=item.id in with_files,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
             )
@@ -99,18 +112,17 @@ class RequestService:
 
     async def detail(self, request_id: UUID) -> RequestDetail:
         request = await self.get(request_id)
-        file = None
-        if request.media_id is not None:
-            media = await self.media.by_id(request.media_id)
-            if media is None:
-                raise RequestNotFoundError
-            file = RequestFile(
+        download_url = f"/api/v1/admin/requests/{request.id}/file"
+        files = [
+            RequestFile(
                 id=media.id,
                 original_name=media.original_name,
                 mime_type=media.mime_type,
                 size_bytes=media.size_bytes,
-                download_url=f"/api/v1/admin/requests/{request.id}/file",
+                download_url=f"{download_url}?file_id={media.id}",
             )
+            for media in await self.requests.files(request.id)
+        ]
         return RequestDetail(
             id=request.id,
             name=request.name,
@@ -120,18 +132,19 @@ class RequestService:
             status=request.status,
             created_at=request.created_at,
             updated_at=request.updated_at,
-            file=file,
+            file=files[0].model_copy(update={"download_url": download_url}) if files else None,
+            files=files,
         )
 
-    async def file(self, request_id: UUID):
-        request = await self.get(request_id)
-        if request.media_id is None:
-            raise RequestNotFoundError
-        media = await self.media.by_id(request.media_id)
-        if media is None:
-            raise RequestNotFoundError
-        obj = await self.storage.get(self.storage.settings.s3_private_bucket, media.object_key)
-        return media, obj["Body"]
+    async def file(self, request_id: UUID, file_id: UUID | None = None):
+        uploads = await self.requests.files(request_id)
+        for media in uploads:
+            if file_id is None or media.id == file_id:
+                obj = await self.storage.get(
+                    self.storage.settings.s3_private_bucket, media.object_key
+                )
+                return media, obj["Body"]
+        raise RequestNotFoundError
 
     async def update(self, request_id: UUID, status: str) -> RequestDetail:
         request = await self.get(request_id)

@@ -12,6 +12,8 @@ from starlette.datastructures import UploadFile
 Image.MAX_IMAGE_PIXELS = None
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_REQUEST_FILES = 3
+MAX_REQUEST_FILE_SIZE = 5 * 1024 * 1024
 IMAGE_TYPES = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
 IMAGE_MIMES = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 
@@ -76,7 +78,9 @@ def inspect_file(
     raise InvalidFileError
 
 
-async def check_file(upload: UploadFile, *, images_only: bool) -> CheckedFile:
+async def check_file(
+    upload: UploadFile, *, images_only: bool, max_size: int = MAX_FILE_SIZE
+) -> CheckedFile:
     name = PurePosixPath((upload.filename or "").replace("\\", "/")).name
     if not name or len(name) > 255 or any(ord(char) < 32 for char in name):
         raise InvalidFileError
@@ -85,7 +89,7 @@ async def check_file(upload: UploadFile, *, images_only: bool) -> CheckedFile:
     try:
         while chunk := await upload.read(64 * 1024):
             size += len(chunk)
-            if size > MAX_FILE_SIZE:
+            if size > max_size:
                 raise FileTooLargeError
             stream.write(chunk)
         if size == 0:

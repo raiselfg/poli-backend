@@ -7,7 +7,14 @@ from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import CurrentSessionDep, RequestServiceDep
-from app.api.files import FileTooLargeError, InvalidFileError, check_file
+from app.api.files import (
+    MAX_REQUEST_FILE_SIZE,
+    MAX_REQUEST_FILES,
+    CheckedFile,
+    FileTooLargeError,
+    InvalidFileError,
+    check_file,
+)
 from app.schemas.request import (
     RequestCreated,
     RequestDetail,
@@ -31,37 +38,31 @@ async def create_request(
 ):
     if not name.strip() or not phone.strip():
         raise HTTPException(status_code=422, detail="Name and phone must not be blank")
-    if file is not None and len(file) > 1:
-        raise HTTPException(status_code=400, detail="Only one file is allowed")
-    checked = None
+    uploads = file or []
+    checked: list[CheckedFile] = []
     try:
-        if file:
-            try:
-                checked = await check_file(file[0], images_only=False)
-            except FileTooLargeError:
-                raise HTTPException(status_code=413, detail="File too large") from None
-            except InvalidFileError:
-                raise HTTPException(status_code=415, detail="Unsupported file") from None
-        file_data = None
-        if checked is not None:
-            file_data = (
-                checked.stream,
-                checked.original_name,
-                checked.mime_type,
-                checked.size,
-                checked.width,
-                checked.height,
+        if len(uploads) > MAX_REQUEST_FILES:
+            raise HTTPException(status_code=400, detail="Too many files")
+        for upload in uploads:
+            checked.append(
+                await check_file(upload, images_only=False, max_size=MAX_REQUEST_FILE_SIZE)
             )
-        try:
-            return await service.create(name, phone, comment, category_id, file_data)
-        except RequestCategoryNotFoundError:
-            raise HTTPException(status_code=404, detail="Category not found") from None
+        files = [
+            (item.stream, item.original_name, item.mime_type, item.size, item.width, item.height)
+            for item in checked
+        ]
+        return await service.create(name, phone, comment, category_id, files)
+    except FileTooLargeError:
+        raise HTTPException(status_code=413, detail="File too large") from None
+    except InvalidFileError:
+        raise HTTPException(status_code=415, detail="Unsupported file") from None
+    except RequestCategoryNotFoundError:
+        raise HTTPException(status_code=404, detail="Category not found") from None
     finally:
-        if checked is not None:
-            checked.stream.close()
-        if file:
-            for upload in file:
-                await upload.close()
+        for item in checked:
+            item.stream.close()
+        for upload in uploads:
+            await upload.close()
 
 
 @router.get("/admin/requests", response_model=list[RequestListItem])
@@ -85,10 +86,13 @@ async def get_request(
 
 @router.get("/admin/requests/{request_id}/file")
 async def download_request_file(
-    request_id: UUID, service: RequestServiceDep, current_session: CurrentSessionDep
+    request_id: UUID,
+    service: RequestServiceDep,
+    current_session: CurrentSessionDep,
+    file_id: UUID | None = None,
 ):
     try:
-        media, body = await service.file(request_id)
+        media, body = await service.file(request_id, file_id)
     except RequestNotFoundError:
         raise HTTPException(status_code=404, detail="File not found") from None
 

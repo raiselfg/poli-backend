@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import CATALOG_PREFIX, CategoryMedia, Media
-from app.models.request import Request
+from app.models.request import RequestAttachment
 
 
 class MediaRepository:
@@ -17,7 +17,7 @@ class MediaRepository:
         return list(result.scalars().all())
 
     async def used_by_requests(self, ids: list[UUID]) -> set[UUID]:
-        stmt = select(Request.media_id).where(Request.media_id.in_(ids))
+        stmt = select(RequestAttachment.media_id).where(RequestAttachment.media_id.in_(ids))
         result = await self.db.execute(stmt)
         return set(result.scalars().all())
 

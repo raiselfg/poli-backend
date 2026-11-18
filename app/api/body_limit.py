@@ -3,8 +3,13 @@ import tempfile
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
-MAX_UPLOAD_REQUEST_SIZE = 11 * 1024 * 1024
-UPLOAD_PATHS = {"/api/v1/requests", "/api/v1/admin/media"}
+from app.api.files import MAX_FILE_SIZE, MAX_REQUEST_FILE_SIZE, MAX_REQUEST_FILES
+
+MULTIPART_OVERHEAD = 1024 * 1024
+UPLOAD_LIMITS = {
+    "/api/v1/requests": MAX_REQUEST_FILES * MAX_REQUEST_FILE_SIZE + MULTIPART_OVERHEAD,
+    "/api/v1/admin/media": MAX_FILE_SIZE + MULTIPART_OVERHEAD,
+}
 
 
 class UploadBodyLimitMiddleware:
@@ -12,11 +17,11 @@ class UploadBodyLimitMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if (
-            scope["type"] != "http"
-            or scope["method"] != "POST"
-            or scope["path"] not in UPLOAD_PATHS
-        ):
+        if scope["type"] != "http" or scope["method"] != "POST":
+            await self.app(scope, receive, send)
+            return
+        limit = UPLOAD_LIMITS.get(scope["path"])
+        if limit is None:
             await self.app(scope, receive, send)
             return
         with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as body:
@@ -27,7 +32,7 @@ class UploadBodyLimitMiddleware:
                     return
                 chunk = message.get("body", b"")
                 size += len(chunk)
-                if size > MAX_UPLOAD_REQUEST_SIZE:
+                if size > limit:
                     response = JSONResponse(
                         status_code=413, content={"detail": "Request too large"}
                     )
