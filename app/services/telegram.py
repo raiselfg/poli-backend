@@ -8,7 +8,6 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import new_token, token_hash, utc_now, valid_token
-from app.repository.category import CategoryRepository
 from app.repository.request import RequestRepository
 from app.repository.telegram import TelegramRepository
 from app.schemas.request import RequestCreated
@@ -166,9 +165,6 @@ async def notify_new_request(
             request = await RequestRepository(db).by_id(created.id)
             if request is None:
                 return
-            category = None
-            if request.category_id is not None:
-                category = await CategoryRepository(db).by_id(request.category_id)
 
         submitted_at = created.created_at.astimezone(ZoneInfo("Europe/Moscow"))
         phone = " ".join(request.phone.split())
@@ -182,7 +178,6 @@ async def notify_new_request(
             f"Имя: {' '.join(request.name.split())}",
             f"Телефон: {phone}",
             f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)",
-            f"Категория: {category.title if category else 'не выбрана'}",
             f"Вложения: {'есть' if created.has_file else 'нет'}",
         ]
         text = "\n".join(lines)

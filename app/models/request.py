@@ -17,16 +17,12 @@ class Request(Base):
         ),
         Index("idx_requests_created_at", text("created_at DESC"), text("id DESC")),
         Index("idx_requests_status_created_at", "status", text("created_at DESC")),
-        Index("idx_requests_category_id", "category_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, server_default=text("gen_random_uuid()"))
     name: Mapped[str] = mapped_column(String(100))
     phone: Mapped[str] = mapped_column(String(40))
     comment: Mapped[str | None] = mapped_column(Text)
-    category_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("categories.id", ondelete="SET NULL", name="fk_requests_category")
-    )
     status: Mapped[str] = mapped_column(String(20), server_default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

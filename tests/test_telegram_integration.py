@@ -224,7 +224,6 @@ async def test_telegram_link_and_request_notifications(
                 "Имя: Test customer\n"
                 "Телефон: +79213416117\n"
                 f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)\n"
-                "Категория: не выбрана\n"
                 "Вложения: нет\n\n"
                 "Комментарий:\nВтулка 40×60\nНужно 10 штук.\n\n"
                 f"Открыть заявку: {origin}/requests/{created['id']}"

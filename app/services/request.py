@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import Media
 from app.models.request import Request
-from app.repository.category import CategoryRepository
 from app.repository.media import MediaRepository
 from app.repository.request import RequestRepository
 from app.schemas.request import RequestCreated, RequestDetail, RequestFile, RequestListItem
@@ -19,15 +18,10 @@ class RequestNotFoundError(Exception):
     pass
 
 
-class RequestCategoryNotFoundError(Exception):
-    pass
-
-
 class RequestService:
     def __init__(self, db: AsyncSession, storage: S3Storage):
         self.db = db
         self.requests = RequestRepository(db)
-        self.categories = CategoryRepository(db)
         self.media = MediaRepository(db)
         self.storage = storage
 
@@ -36,17 +30,13 @@ class RequestService:
         name: str,
         phone: str,
         comment: str | None,
-        category_id: UUID | None,
         files: list[tuple[BinaryIO, str, str, int, int | None, int | None]],
     ) -> RequestCreated:
-        if category_id is not None and await self.categories.by_id(category_id) is None:
-            raise RequestCategoryNotFoundError
         request = Request(
             id=uuid4(),
             name=name,
             phone=phone,
             comment=comment,
-            category_id=category_id,
         )
         bucket = self.storage.settings.s3_private_bucket
         attachment_ids: list[UUID] = []
@@ -95,7 +85,6 @@ class RequestService:
                 name=item.name,
                 phone=item.phone,
                 comment=item.comment,
-                category_id=item.category_id,
                 status=item.status,
                 has_file=item.id in with_files,
                 created_at=item.created_at,
@@ -128,7 +117,6 @@ class RequestService:
             name=request.name,
             phone=request.phone,
             comment=request.comment,
-            category_id=request.category_id,
             status=request.status,
             created_at=request.created_at,
             updated_at=request.updated_at,

@@ -187,7 +187,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             ]
             response = await client.post(
                 "/api/v1/requests",
-                data={"name": "Test", "phone": "123", "categoryId": category_id},
+                data={"name": "Test", "phone": "123"},
                 files=[("file", upload) for upload in uploads],
             )
             assert response.status_code == 201, response.text
@@ -195,6 +195,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert response.json()["hasFile"]
             detail = await client.get(f"/api/v1/admin/requests/{request_id}")
             assert detail.status_code == 200, detail.text
+            assert "categoryId" not in detail.json()
             attachments = detail.json()["files"]
             attachment_ids = [attachment["id"] for attachment in attachments]
             assert [attachment["originalName"] for attachment in attachments] == [
@@ -203,6 +204,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert detail.json()["file"]["id"] == attachment_ids[0]
             listed = await client.get("/api/v1/admin/requests")
             assert any(item["id"] == request_id and item["hasFile"] for item in listed.json())
+            assert all("categoryId" not in item for item in listed.json())
             async with httpx.AsyncClient(trust_env=False) as cdn:
                 direct = await cdn.get(
                     f"{storage_settings.s3_endpoint_url}/{storage_settings.s3_private_bucket}"
@@ -244,8 +246,6 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert (
                 await client.delete(f"/api/v1/admin/categories/{category_id}")
             ).status_code == 204
-            detail = await client.get(f"/api/v1/admin/requests/{request_id}")
-            assert detail.json()["categoryId"] is None
             assert (await client.delete(f"/api/v1/admin/media/{media_id}")).status_code == 204
             async with httpx.AsyncClient(trust_env=False) as cdn:
                 for url in variant_urls:

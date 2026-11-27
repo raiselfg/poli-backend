@@ -19,7 +19,6 @@ class RequestListItem(BaseModel):
     name: str
     phone: str
     comment: str | None
-    category_id: UUID | None = Field(serialization_alias="categoryId")
     status: RequestStatus
     has_file: bool = Field(serialization_alias="hasFile")
     created_at: datetime = Field(serialization_alias="createdAt")
@@ -39,7 +38,6 @@ class RequestDetail(BaseModel):
     name: str
     phone: str
     comment: str | None
-    category_id: UUID | None = Field(serialization_alias="categoryId")
     status: RequestStatus
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")

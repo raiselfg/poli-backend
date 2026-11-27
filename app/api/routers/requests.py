@@ -22,7 +22,7 @@ from app.schemas.request import (
     RequestStatus,
     RequestUpdate,
 )
-from app.services.request import RequestCategoryNotFoundError, RequestNotFoundError
+from app.services.request import RequestNotFoundError
 from app.services.telegram import notify_new_request
 
 router = APIRouter(tags=["requests"])
@@ -37,7 +37,6 @@ async def create_request(
     name: Annotated[str, Form(min_length=1, max_length=100)],
     phone: Annotated[str, Form(min_length=1, max_length=40)],
     comment: Annotated[str | None, Form()] = None,
-    category_id: Annotated[UUID | None, Form(alias="categoryId")] = None,
     file: Annotated[list[UploadFile] | None, File()] = None,
 ):
     if not name.strip() or not phone.strip():
@@ -55,7 +54,7 @@ async def create_request(
             (item.stream, item.original_name, item.mime_type, item.size, item.width, item.height)
             for item in checked
         ]
-        created = await service.create(name, phone, comment, category_id, files)
+        created = await service.create(name, phone, comment, files)
         token = settings.telegram_bot_token
         if token:
             background_tasks.add_task(
@@ -71,8 +70,6 @@ async def create_request(
         raise HTTPException(status_code=413, detail="File too large") from None
     except InvalidFileError:
         raise HTTPException(status_code=415, detail="Unsupported file") from None
-    except RequestCategoryNotFoundError:
-        raise HTTPException(status_code=404, detail="Category not found") from None
     finally:
         for item in checked:
             item.stream.close()
