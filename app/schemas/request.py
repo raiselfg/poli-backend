@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 RequestStatus = Literal["new", "in_progress", "completed"]
 
@@ -49,3 +49,17 @@ class RequestUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: RequestStatus
+
+
+class RequestNoteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class RequestNoteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    text: str
+    created_at: datetime = Field(serialization_alias="createdAt")

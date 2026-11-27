@@ -196,6 +196,19 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             detail = await client.get(f"/api/v1/admin/requests/{request_id}")
             assert detail.status_code == 200, detail.text
             assert "categoryId" not in detail.json()
+            notes_path = f"/api/v1/admin/requests/{request_id}/notes"
+            assert (await client.get(notes_path)).json() == []
+            assert (await client.post(notes_path, json={"text": "  "})).status_code == 422
+            first_note = await client.post(notes_path, json={"text": "  Согласовали размеры  "})
+            second_note = await client.post(notes_path, json={"text": "Ждём чертёж"})
+            assert first_note.status_code == second_note.status_code == 201
+            assert first_note.json()["text"] == "Согласовали размеры"
+            assert first_note.json()["createdAt"]
+            assert (await client.get(notes_path)).json() == [second_note.json(), first_note.json()]
+            missing_request_note = await client.post(
+                f"/api/v1/admin/requests/{uuid4()}/notes", json={"text": "Не сохранять"}
+            )
+            assert missing_request_note.status_code == 404
             attachments = detail.json()["files"]
             attachment_ids = [attachment["id"] for attachment in attachments]
             assert [attachment["originalName"] for attachment in attachments] == [
@@ -217,6 +230,9 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                 anonymous_download = await anonymous_client.get(
                     f"/api/v1/admin/requests/{request_id}/file"
                 )
+                assert (await anonymous_client.get(notes_path)).status_code == 401
+                anonymous_note = await anonymous_client.post(notes_path, json={"text": "Тест"})
+                assert anonymous_note.status_code == 401
             assert anonymous_download.status_code == 401
             downloaded = await client.get(f"/api/v1/admin/requests/{request_id}/file")
             assert downloaded.status_code == 200

@@ -19,6 +19,8 @@ from app.schemas.request import (
     RequestCreated,
     RequestDetail,
     RequestListItem,
+    RequestNoteCreate,
+    RequestNoteRead,
     RequestStatus,
     RequestUpdate,
 )
@@ -135,5 +137,28 @@ async def update_request(
 ):
     try:
         return await service.update(request_id, body.status)
+    except RequestNotFoundError:
+        raise HTTPException(status_code=404, detail="Request not found") from None
+
+
+@router.get("/admin/requests/{request_id}/notes", response_model=list[RequestNoteRead])
+async def list_request_notes(
+    request_id: UUID, _current_session: CurrentSessionDep, service: RequestServiceDep
+):
+    try:
+        return await service.list_notes(request_id)
+    except RequestNotFoundError:
+        raise HTTPException(status_code=404, detail="Request not found") from None
+
+
+@router.post("/admin/requests/{request_id}/notes", status_code=201, response_model=RequestNoteRead)
+async def create_request_note(
+    request_id: UUID,
+    body: RequestNoteCreate,
+    _current_session: CurrentSessionDep,
+    service: RequestServiceDep,
+):
+    try:
+        return await service.add_note(request_id, body.text)
     except RequestNotFoundError:
         raise HTTPException(status_code=404, detail="Request not found") from None

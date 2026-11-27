@@ -30,6 +30,20 @@ class Request(Base):
     )
 
 
+class RequestNote(Base):
+    __tablename__ = "request_notes"
+    __table_args__ = (
+        Index("idx_request_notes_request_created_at", "request_id", "created_at", "id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(
+        ForeignKey("requests.id", ondelete="CASCADE", name="fk_request_notes_request")
+    )
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class RequestAttachment(Base):
     __tablename__ = "request_attachments"
     __table_args__ = (

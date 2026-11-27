@@ -5,9 +5,10 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import Media
-from app.models.request import Request
+from app.models.request import Request, RequestNote
 from app.repository.media import MediaRepository
 from app.repository.request import RequestRepository
+from app.repository.request_note import RequestNoteRepository
 from app.schemas.request import RequestCreated, RequestDetail, RequestFile, RequestListItem
 from app.storage.s3 import S3Storage
 
@@ -22,6 +23,7 @@ class RequestService:
     def __init__(self, db: AsyncSession, storage: S3Storage):
         self.db = db
         self.requests = RequestRepository(db)
+        self.notes = RequestNoteRepository(db)
         self.media = MediaRepository(db)
         self.storage = storage
 
@@ -140,3 +142,15 @@ class RequestService:
         await self.db.commit()
         await self.db.refresh(request)
         return await self.detail(request_id)
+
+    async def list_notes(self, request_id: UUID) -> list[RequestNote]:
+        await self.get(request_id)
+        return await self.notes.list(request_id)
+
+    async def add_note(self, request_id: UUID, text: str) -> RequestNote:
+        await self.get(request_id)
+        note = RequestNote(id=uuid4(), request_id=request_id, text=text)
+        self.notes.add(note)
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
