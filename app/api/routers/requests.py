@@ -2,11 +2,11 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from app.api.dependencies import CurrentSessionDep, RequestServiceDep
+from app.api.dependencies import CurrentSessionDep, RequestServiceDep, SettingsDep
 from app.api.files import (
     MAX_REQUEST_FILE_SIZE,
     MAX_REQUEST_FILES,
@@ -23,6 +23,7 @@ from app.schemas.request import (
     RequestUpdate,
 )
 from app.services.request import RequestCategoryNotFoundError, RequestNotFoundError
+from app.services.telegram import notify_new_request
 
 router = APIRouter(tags=["requests"])
 
@@ -30,6 +31,9 @@ router = APIRouter(tags=["requests"])
 @router.post("/requests", status_code=201, response_model=RequestCreated)
 async def create_request(
     service: RequestServiceDep,
+    settings: SettingsDep,
+    request: Request,
+    background_tasks: BackgroundTasks,
     name: Annotated[str, Form(min_length=1, max_length=100)],
     phone: Annotated[str, Form(min_length=1, max_length=40)],
     comment: Annotated[str | None, Form()] = None,
@@ -51,7 +55,18 @@ async def create_request(
             (item.stream, item.original_name, item.mime_type, item.size, item.width, item.height)
             for item in checked
         ]
-        return await service.create(name, phone, comment, category_id, files)
+        created = await service.create(name, phone, comment, category_id, files)
+        token = settings.telegram_bot_token
+        if token:
+            background_tasks.add_task(
+                notify_new_request,
+                request.app.state.session_factory,
+                token.get_secret_value(),
+                settings.allowed_origins,
+                created.id,
+                proxy_url=settings.telegram_proxy_url,
+            )
+        return created
     except FileTooLargeError:
         raise HTTPException(status_code=413, detail="File too large") from None
     except InvalidFileError:

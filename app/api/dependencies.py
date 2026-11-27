@@ -12,6 +12,7 @@ from app.services.category import CategoryService
 from app.services.contact import ContactService
 from app.services.media import MediaService
 from app.services.request import RequestService
+from app.services.telegram import TelegramService
 from app.storage.s3 import S3Storage, get_storage_settings
 
 
@@ -81,3 +82,15 @@ def get_request_service(session: Annotated[AsyncSession, Depends(get_db)]) -> Re
 
 
 RequestServiceDep = Annotated[RequestService, Depends(get_request_service)]
+
+
+def get_telegram_service(
+    session: Annotated[AsyncSession, Depends(get_db)], settings: SettingsDep
+) -> TelegramService:
+    token = settings.telegram_bot_token
+    return TelegramService(
+        session, token.get_secret_value() if token else "", settings.telegram_proxy_url
+    )
+
+
+TelegramServiceDep = Annotated[TelegramService, Depends(get_telegram_service)]

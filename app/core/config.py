@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     allow_insecure_cookies: bool
     session_ttl_seconds: int
     is_register_disable: bool
+    telegram_bot_token: SecretStr | None = None
+    telegram_proxy_url: SecretStr | None = None
 
     @model_validator(mode="after")
     def validate_security(self):
