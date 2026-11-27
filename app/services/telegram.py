@@ -17,6 +17,8 @@ from app.telegram import TelegramBot, TelegramError
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
 
 class TelegramNotConfiguredError(Exception):
     pass
@@ -178,9 +180,26 @@ async def notify_new_request(
             f"Категория: {category.title if category else 'не выбрана'}",
             f"Вложения: {'есть' if created.has_file else 'нет'}",
         ]
-        if origin in allowed_origins:
-            lines.extend(("", f"Открыть заявку: {origin}/requests/{created.id}"))
         text = "\n".join(lines)
+        link = ""
+        if origin in allowed_origins:
+            link = f"\n\nОткрыть заявку: {origin}/requests/{created.id}"
+        comment = (request.comment or "").strip()
+        if comment:
+            label = "\n\nКомментарий:\n"
+            # Reserve space for the admin link and count emoji conservatively as UTF-16.
+            available_bytes = 2 * TELEGRAM_MAX_MESSAGE_LENGTH - len(
+                (text + label + link).encode("utf-16-le")
+            )
+            encoded_comment = comment.encode("utf-16-le")
+            if available_bytes > 0:
+                if len(encoded_comment) > available_bytes:
+                    comment = encoded_comment[: available_bytes - 2].decode(
+                        "utf-16-le", errors="ignore"
+                    )
+                    comment += "…"
+                text += label + comment
+        text += link
         await TelegramBot(token, proxy_url).send_message(chat_id, text)
     except TelegramError as exc:
         logger.warning("Could not notify about request %s: %s", created.id, exc)

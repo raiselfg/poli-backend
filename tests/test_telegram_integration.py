@@ -205,16 +205,17 @@ async def test_telegram_link_and_request_notifications(
                 assert await confirm(expiring_link["code"]) == {"status": "expired"}
             assert (await client.get(path)).json() == {"status": "connected"}
 
-            async def create_request():
+            async def create_request(comment=""):
                 response = await client.post(
-                    "/api/v1/requests", data={"name": "Test customer", "phone": "123"}
+                    "/api/v1/requests",
+                    data={"name": "Test customer", "phone": "123", "comment": comment},
                 )
                 assert response.status_code == 201
                 request_id = UUID(response.json()["id"])
                 request_ids.append(request_id)
                 return response.json()
 
-            created = await create_request()
+            created = await create_request("  Втулка 40×60\nНужно 10 штук.  ")
             submitted_at = datetime.fromisoformat(created["createdAt"]).astimezone(
                 ZoneInfo("Europe/Moscow")
             )
@@ -225,18 +226,29 @@ async def test_telegram_link_and_request_notifications(
                 f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)\n"
                 "Категория: не выбрана\n"
                 "Вложения: нет\n\n"
+                "Комментарий:\nВтулка 40×60\nНужно 10 штук.\n\n"
                 f"Открыть заявку: {origin}/requests/{created['id']}"
             )
             assert outbound == [(2**40, expected, True, None)]
+
+            long_comment = "🔧" * 5000
+            created = await create_request(long_comment)
+            message = outbound[-1][1]
+            assert len(message.encode("utf-16-le")) <= 2 * 4096
+            assert message.endswith(f"…\n\nОткрыть заявку: {origin}/requests/{created['id']}")
+            detail = await client.get(f"/api/v1/admin/requests/{created['id']}")
+            assert detail.json()["comment"] == long_comment
+
             fail_delivery = True
-            created = await create_request()
+            created = await create_request("  ")
             assert (await client.get(f"/api/v1/admin/requests/{created['id']}")).status_code == 200
             assert "Could not notify about request" in caplog.text
             assert bot_token not in caplog.text
             assert proxy_url is None or proxy_url not in caplog.text
+            assert "Комментарий:" not in outbound[-1][1]
             assert (await client.delete(path)).json() == {"status": "disconnected"}
             await create_request()
-            assert len(outbound) == 2
+            assert len(outbound) == 3
         finally:
             await client.delete(path)
             async with database.session_factory() as db:
