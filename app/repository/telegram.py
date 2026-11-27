@@ -33,8 +33,8 @@ class TelegramRepository:
                 chat_id=chat_id,
                 admin_origin=admin_origin,
                 bot_token_hash=bot_token_hash,
-                link_hash=None,
                 link_expires_at=None,
+                link_admin_origin=None,
             )
             .returning(TelegramBinding.id)
         )

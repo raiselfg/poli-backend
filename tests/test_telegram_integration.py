@@ -1,15 +1,18 @@
 """Exercise notification settings with PostgreSQL and a simulated Telegram Bot API."""
 
+import asyncio
 import json
 import os
-from datetime import timedelta
+from contextlib import suppress
+from datetime import datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.methods import GetMe, GetUpdates, SendMessage
-from aiogram.types import LinkPreviewOptions
+from aiogram.types import InlineKeyboardMarkup, LinkPreviewOptions
 from aiohttp_socks import ProxyError
 from fastapi import FastAPI
 from pydantic import SecretStr
@@ -68,6 +71,7 @@ async def test_telegram_link_and_request_notifications(
 
     updates = []
     outbound = []
+    connection_message = asyncio.Event()
     fail_delivery = False
 
     async def telegram_api(session, bot, method, timeout=None):  # noqa: ASYNC109
@@ -101,7 +105,13 @@ async def test_telegram_link_and_request_notifications(
             assert isinstance(method, SendMessage)
             preview = method.link_preview_options
             assert isinstance(preview, LinkPreviewOptions)
-            outbound.append((method.chat_id, method.text, preview.is_disabled))
+            button_url = None
+            if isinstance(method.reply_markup, InlineKeyboardMarkup):
+                [[button]] = method.reply_markup.inline_keyboard
+                assert button.text == "Вернуться в админку"
+                button_url = button.url
+                connection_message.set()
+            outbound.append((method.chat_id, method.text, preview.is_disabled, button_url))
             if fail_delivery:
                 if proxy_url is not None:
                     raise ProxyError(proxy_url)
@@ -160,8 +170,32 @@ async def test_telegram_link_and_request_notifications(
             add_update(123, "private", "/start")
             assert await confirm(link["code"]) == {"status": "waiting"}
             add_update(2**40, "private", command)
+            polling = asyncio.create_task(
+                telegram_service.poll_telegram_links(
+                    database.session_factory,
+                    bot_token,
+                    app.state.settings.telegram_proxy_url,
+                    [origin],
+                )
+            )
+            try:
+                await asyncio.wait_for(connection_message.wait(), timeout=3)
+            finally:
+                polling.cancel()
+                with suppress(asyncio.CancelledError):
+                    await polling
+            assert outbound == [
+                (
+                    2**40,
+                    "Telegram успешно подключён. Новые заявки будут приходить в этот чат.\n\n"
+                    "Вернитесь в раздел «Заявки», чтобы проверить статус подключения.",
+                    True,
+                    origin + "/requests",
+                )
+            ]
             assert await confirm(link["code"]) == {"status": "connected"}
-            assert await confirm(link["code"]) == {"status": "expired"}
+            assert len(outbound) == 1
+            outbound.clear()
             assert (await client.get(path)).json() == {"status": "connected"}
 
             with monkeypatch.context() as patch:
@@ -178,15 +212,25 @@ async def test_telegram_link_and_request_notifications(
                 assert response.status_code == 201
                 request_id = UUID(response.json()["id"])
                 request_ids.append(request_id)
-                return request_id
+                return response.json()
 
-            request_id = await create_request()
-            assert outbound == [
-                (2**40, f"Новая заявка с лендинга\n{origin}/requests/{request_id}", True)
-            ]
+            created = await create_request()
+            submitted_at = datetime.fromisoformat(created["createdAt"]).astimezone(
+                ZoneInfo("Europe/Moscow")
+            )
+            expected = (
+                "Новая заявка с лендинга\n\n"
+                "Имя: Test customer\n"
+                "Телефон: 123\n"
+                f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)\n"
+                "Категория: не выбрана\n"
+                "Вложения: нет\n\n"
+                f"Открыть заявку: {origin}/requests/{created['id']}"
+            )
+            assert outbound == [(2**40, expected, True, None)]
             fail_delivery = True
-            request_id = await create_request()
-            assert (await client.get(f"/api/v1/admin/requests/{request_id}")).status_code == 200
+            created = await create_request()
+            assert (await client.get(f"/api/v1/admin/requests/{created['id']}")).status_code == 200
             assert "Could not notify about request" in caplog.text
             assert bot_token not in caplog.text
             assert proxy_url is None or proxy_url not in caplog.text

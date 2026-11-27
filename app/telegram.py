@@ -3,7 +3,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ChatType
 from aiogram.exceptions import AiogramError
 from aiogram.methods import GetMe, GetUpdates, SendMessage, TelegramMethod
-from aiogram.types import LinkPreviewOptions
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 from aiogram.utils.token import TokenValidationError
 from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 from pydantic import SecretStr
@@ -40,25 +40,30 @@ class TelegramBot:
             raise TelegramError("Telegram bot has no username")
         return profile.username
 
-    async def find_private_chat(self, code: str) -> int | None:
+    async def private_start_commands(self) -> list[tuple[int, str]]:
         # This bot is dedicated to notifications, so older queued updates can be discarded.
         updates = await self._call(GetUpdates(offset=-100, allowed_updates=["message"]))
-        command = f"/start {code}"
+        commands = []
         for update in updates:
             message = update.message
-            if (
-                message is not None
-                and message.chat.type == ChatType.PRIVATE
-                and message.text == command
-            ):
-                return message.chat.id
-        return None
+            if message is None or message.chat.type != ChatType.PRIVATE or message.text is None:
+                continue
+            command, _, code = message.text.partition(" ")
+            if command == "/start":
+                commands.append((message.chat.id, code))
+        return commands
 
-    async def send_message(self, chat_id: int, text: str) -> None:
+    async def send_message(self, chat_id: int, text: str, *, admin_url: str | None = None) -> None:
+        keyboard = None
+        if admin_url is not None:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Вернуться в админку", url=admin_url)]]
+            )
         await self._call(
             SendMessage(
                 chat_id=chat_id,
                 text=text,
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
+                reply_markup=keyboard,
             )
         )

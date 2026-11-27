@@ -16,3 +16,4 @@ class TelegramBinding(Base):
     bot_token_hash: Mapped[str | None] = mapped_column(String(64))
     link_hash: Mapped[str | None] = mapped_column(String(64))
     link_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    link_admin_origin: Mapped[str | None] = mapped_column(String)

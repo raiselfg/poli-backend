@@ -63,7 +63,7 @@ async def create_request(
                 request.app.state.session_factory,
                 token.get_secret_value(),
                 settings.allowed_origins,
-                created.id,
+                created,
                 proxy_url=settings.telegram_proxy_url,
             )
         return created

@@ -20,11 +20,16 @@ async def telegram_status(_current_session: CurrentSessionDep, service: Telegram
 
 @router.post("/link", response_model=TelegramLink)
 async def create_telegram_link(
-    _current_session: CurrentSessionDep, service: TelegramServiceDep, response: Response
+    _current_session: CurrentSessionDep,
+    service: TelegramServiceDep,
+    settings: SettingsDep,
+    request: Request,
+    response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
+    origin = request.headers.get("origin")
     try:
-        return await service.create_link()
+        return await service.create_link(origin if origin in settings.allowed_origins else None)
     except TelegramNotConfiguredError:
         raise HTTPException(status_code=503, detail="Telegram bot is not configured") from None
     except TelegramError:
