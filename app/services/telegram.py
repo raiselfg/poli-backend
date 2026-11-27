@@ -171,11 +171,16 @@ async def notify_new_request(
                 category = await CategoryRepository(db).by_id(request.category_id)
 
         submitted_at = created.created_at.astimezone(ZoneInfo("Europe/Moscow"))
+        phone = " ".join(request.phone.split())
+        compact_phone = phone.translate(str.maketrans("", "", " -()"))
+        digits = compact_phone.removeprefix("+")
+        if compact_phone.startswith("+") and digits.isascii() and digits.isdecimal():
+            phone = compact_phone
         lines = [
             "Новая заявка с лендинга",
             "",
             f"Имя: {' '.join(request.name.split())}",
-            f"Телефон: {' '.join(request.phone.split())}",
+            f"Телефон: {phone}",
             f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)",
             f"Категория: {category.title if category else 'не выбрана'}",
             f"Вложения: {'есть' if created.has_file else 'нет'}",

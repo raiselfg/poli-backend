@@ -208,7 +208,7 @@ async def test_telegram_link_and_request_notifications(
             async def create_request(comment=""):
                 response = await client.post(
                     "/api/v1/requests",
-                    data={"name": "Test customer", "phone": "123", "comment": comment},
+                    data={"name": "Test customer", "phone": "+7 921-341-61-17", "comment": comment},
                 )
                 assert response.status_code == 201
                 request_id = UUID(response.json()["id"])
@@ -222,7 +222,7 @@ async def test_telegram_link_and_request_notifications(
             expected = (
                 "Новая заявка с лендинга\n\n"
                 "Имя: Test customer\n"
-                "Телефон: 123\n"
+                "Телефон: +79213416117\n"
                 f"Получена: {submitted_at:%d.%m.%Y в %H:%M} (МСК)\n"
                 "Категория: не выбрана\n"
                 "Вложения: нет\n\n"
