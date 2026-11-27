@@ -44,6 +44,23 @@ class RequestNote(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RequestNoteAttachment(Base):
+    __tablename__ = "request_note_attachments"
+    __table_args__ = (
+        CheckConstraint("position BETWEEN 0 AND 4", name="chk_request_note_attachments_position"),
+    )
+
+    note_id: Mapped[UUID] = mapped_column(
+        ForeignKey("request_notes.id", ondelete="CASCADE", name="fk_request_note_attachments_note"),
+        primary_key=True,
+    )
+    position: Mapped[int] = mapped_column(primary_key=True)
+    media_id: Mapped[UUID] = mapped_column(
+        ForeignKey("media.id", ondelete="RESTRICT", name="fk_request_note_attachments_media"),
+        unique=True,
+    )
+
+
 class RequestAttachment(Base):
     __tablename__ = "request_attachments"
     __table_args__ = (

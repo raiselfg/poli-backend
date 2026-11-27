@@ -1,11 +1,18 @@
+import re
 import tempfile
 
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
-from app.api.files import MAX_FILE_SIZE, MAX_REQUEST_FILE_SIZE, MAX_REQUEST_FILES
+from app.api.files import (
+    MAX_FILE_SIZE,
+    MAX_REQUEST_FILE_SIZE,
+    MAX_REQUEST_FILES,
+    MAX_REQUEST_NOTE_FILES,
+)
 
 MULTIPART_OVERHEAD = 1024 * 1024
+NOTE_UPLOAD_PATH = re.compile(r"/api/v1/admin/requests/[^/]+/notes/with-files/?")
 UPLOAD_LIMITS = {
     "/api/v1/requests": MAX_REQUEST_FILES * MAX_REQUEST_FILE_SIZE + MULTIPART_OVERHEAD,
     "/api/v1/admin/media": MAX_FILE_SIZE + MULTIPART_OVERHEAD,
@@ -21,6 +28,8 @@ class UploadBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
         limit = UPLOAD_LIMITS.get(scope["path"])
+        if NOTE_UPLOAD_PATH.fullmatch(scope["path"]):
+            limit = MAX_REQUEST_NOTE_FILES * MAX_REQUEST_FILE_SIZE + MULTIPART_OVERHEAD
         if limit is None:
             await self.app(scope, receive, send)
             return

@@ -10,6 +10,7 @@ from app.api.dependencies import CurrentSessionDep, RequestServiceDep, SettingsD
 from app.api.files import (
     MAX_REQUEST_FILE_SIZE,
     MAX_REQUEST_FILES,
+    MAX_REQUEST_NOTE_FILES,
     CheckedFile,
     FileTooLargeError,
     InvalidFileError,
@@ -24,8 +25,9 @@ from app.schemas.request import (
     RequestStatus,
     RequestUpdate,
 )
-from app.services.request import RequestNotFoundError
+from app.services.request import OptimizedAttachmentTooLargeError, RequestNotFoundError
 from app.services.telegram import notify_new_request
+from app.storage.catalog_images import InvalidCatalogImageError
 
 router = APIRouter(tags=["requests"])
 
@@ -110,6 +112,10 @@ async def download_request_file(
     except RequestNotFoundError:
         raise HTTPException(status_code=404, detail="File not found") from None
 
+    return attachment_response(media, body)
+
+
+def attachment_response(media, body) -> StreamingResponse:
     async def chunks():
         try:
             while chunk := await run_in_threadpool(body.read, 64 * 1024):
@@ -162,3 +168,57 @@ async def create_request_note(
         return await service.add_note(request_id, body.text)
     except RequestNotFoundError:
         raise HTTPException(status_code=404, detail="Request not found") from None
+
+
+@router.post(
+    "/admin/requests/{request_id}/notes/with-files", status_code=201, response_model=RequestNoteRead
+)
+async def create_request_note_with_files(
+    request_id: UUID,
+    _current_session: CurrentSessionDep,
+    service: RequestServiceDep,
+    text: Annotated[str, Form(min_length=1)],
+    file: Annotated[list[UploadFile], File()],
+):
+    clean_text = text.strip()
+    if not clean_text:
+        raise HTTPException(status_code=422, detail="Note must not be blank")
+    checked: list[CheckedFile] = []
+    try:
+        if len(file) > MAX_REQUEST_NOTE_FILES:
+            raise HTTPException(status_code=400, detail="Too many files")
+        for upload in file:
+            checked.append(
+                await check_file(upload, images_only=False, max_size=MAX_REQUEST_FILE_SIZE)
+            )
+        files = [
+            (item.stream, item.original_name, item.mime_type, item.size, item.width, item.height)
+            for item in checked
+        ]
+        return await service.add_note(request_id, clean_text, files)
+    except (FileTooLargeError, OptimizedAttachmentTooLargeError):
+        raise HTTPException(status_code=413, detail="File too large") from None
+    except (InvalidFileError, InvalidCatalogImageError):
+        raise HTTPException(status_code=415, detail="Unsupported file") from None
+    except RequestNotFoundError:
+        raise HTTPException(status_code=404, detail="Request not found") from None
+    finally:
+        for item in checked:
+            item.stream.close()
+        for upload in file:
+            await upload.close()
+
+
+@router.get("/admin/requests/{request_id}/notes/{note_id}/files/{file_id}")
+async def download_request_note_file(
+    request_id: UUID,
+    note_id: UUID,
+    file_id: UUID,
+    _current_session: CurrentSessionDep,
+    service: RequestServiceDep,
+):
+    try:
+        media, body = await service.note_file(request_id, note_id, file_id)
+    except RequestNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found") from None
+    return attachment_response(media, body)

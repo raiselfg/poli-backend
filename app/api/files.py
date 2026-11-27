@@ -9,11 +9,13 @@ from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
+from app.schemas.request import MAX_REQUEST_FILE_SIZE as MAX_REQUEST_FILE_SIZE
+
 Image.MAX_IMAGE_PIXELS = None
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_REQUEST_FILES = 3
-MAX_REQUEST_FILE_SIZE = 5 * 1024 * 1024
+MAX_REQUEST_NOTE_FILES = 5
 IMAGE_TYPES = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
 IMAGE_MIMES = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 

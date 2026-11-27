@@ -55,6 +55,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
     media_id = None
     request_id = None
     attachment_ids = []
+    note_attachment_ids = []
     variant_urls = []
     image = io.BytesIO()
     Image.new("RGB", (2, 3), "red").save(image, format="PNG")
@@ -205,6 +206,44 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             assert first_note.json()["text"] == "Согласовали размеры"
             assert first_note.json()["createdAt"]
             assert (await client.get(notes_path)).json() == [second_note.json(), first_note.json()]
+            upload_path = notes_path + "/with-files"
+            pdf = b"%PDF-1.4\n"
+            small_pdfs = [("file", (f"{index}.pdf", pdf)) for index in range(6)]
+            assert (await client.post(
+                upload_path, data={"text": "Слишком много"}, files=small_pdfs
+            )).status_code == 400
+            assert (await client.post(
+                upload_path, data={"text": "Неподдерживаемый файл"},
+                files=[("file", ("notes.txt", b"text"))],
+            )).status_code == 415
+            assert (await client.post(
+                upload_path, data={"text": "Слишком большой"},
+                files=[("file", ("large.pdf", pdf.ljust(5 * 1024 * 1024 + 1)))],
+            )).status_code == 413
+            assert len((await client.get(notes_path)).json()) == 2
+            note_with_files = await client.post(
+                upload_path,
+                data={"text": "Заметка с файлами"},
+                files=[("file", ("photo.png", image.getvalue())), *small_pdfs[:4]],
+            )
+            assert note_with_files.status_code == 201, note_with_files.text
+            note_files = note_with_files.json()["files"]
+            note_attachment_ids = [item["id"] for item in note_files]
+            assert len(note_files) == 5
+            photo = note_files[0]
+            assert photo["mimeType"] == "image/webp"
+            assert photo["originalName"] == "photo.webp"
+            downloaded_photo = await client.get(photo["downloadUrl"])
+            assert downloaded_photo.status_code == 200
+            assert downloaded_photo.headers["cache-control"] == "private, no-store"
+            with Image.open(io.BytesIO(downloaded_photo.content)) as optimized:
+                assert optimized.format == "WEBP"
+            assert (await client.get(note_files[1]["downloadUrl"])).content == pdf
+            assert (await client.get(notes_path)).json()[0]["files"] == note_files
+            wrong_note = photo["downloadUrl"].replace(
+                note_with_files.json()["id"], second_note.json()["id"]
+            )
+            assert (await client.get(wrong_note)).status_code == 404
             missing_request_note = await client.post(
                 f"/api/v1/admin/requests/{uuid4()}/notes", json={"text": "Не сохранять"}
             )
@@ -231,6 +270,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                     f"/api/v1/admin/requests/{request_id}/file"
                 )
                 assert (await anonymous_client.get(notes_path)).status_code == 401
+                assert (await anonymous_client.get(photo["downloadUrl"])).status_code == 401
                 anonymous_note = await anonymous_client.post(notes_path, json={"text": "Тест"})
                 assert anonymous_note.status_code == 401
             assert anonymous_download.status_code == 401
@@ -280,7 +320,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             if category_id:
                 stmt = delete(Category).where(Category.id == category_id)
                 await db.execute(stmt)
-            for item_id in (media_id, *attachment_ids):
+            for item_id in (media_id, *attachment_ids, *note_attachment_ids):
                 if item_id:
                     stmt = delete(Media).where(Media.id == item_id)
                     await db.execute(stmt)
@@ -290,7 +330,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                 await storage.delete(
                     storage_settings.s3_public_bucket, f"catalog/{media_id}{suffix}"
                 )
-        for attachment_id in attachment_ids:
+        for attachment_id in (*attachment_ids, *note_attachment_ids):
             await storage.delete(storage_settings.s3_private_bucket, f"requests/{attachment_id}")
         for bucket in created:
             storage.client.delete_bucket(Bucket=bucket)

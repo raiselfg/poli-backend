@@ -23,13 +23,15 @@ class CatalogImageVariant:
     height: int
 
 
-def encode_catalog_variants(stream: BinaryIO) -> list[CatalogImageVariant]:
+def encode_catalog_variants(
+    stream: BinaryIO, sizes: tuple[int, ...] = CATALOG_IMAGE_SIZES
+) -> list[CatalogImageVariant]:
     variants = []
     with ExitStack() as outputs:
         try:
             stream.seek(0)
             with Image.open(stream) as source, ExitStack() as frames_to_close:
-                frames = {limit: [] for limit in CATALOG_IMAGE_SIZES}
+                frames = {limit: [] for limit in sizes}
                 loop = source.info.get("loop", 0)
                 durations = []
                 for frame in ImageSequence.Iterator(source):

@@ -1,21 +1,41 @@
 import logging
+from pathlib import PurePosixPath
 from typing import BinaryIO
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.models.media import Media
 from app.models.request import Request, RequestNote
 from app.repository.media import MediaRepository
 from app.repository.request import RequestRepository
 from app.repository.request_note import RequestNoteRepository
-from app.schemas.request import RequestCreated, RequestDetail, RequestFile, RequestListItem
+from app.schemas.request import (
+    MAX_REQUEST_FILE_SIZE,
+    RequestCreated,
+    RequestDetail,
+    RequestFile,
+    RequestListItem,
+    RequestNoteRead,
+)
+from app.storage.catalog_images import (
+    CATALOG_IMAGE_MIME,
+    CATALOG_IMAGE_SIZES,
+    encode_catalog_variants,
+)
 from app.storage.s3 import S3Storage
 
 logger = logging.getLogger(__name__)
 
+type AttachmentUpload = tuple[BinaryIO, str, str, int, int | None, int | None]
+
 
 class RequestNotFoundError(Exception):
+    pass
+
+
+class OptimizedAttachmentTooLargeError(Exception):
     pass
 
 
@@ -32,7 +52,7 @@ class RequestService:
         name: str,
         phone: str,
         comment: str | None,
-        files: list[tuple[BinaryIO, str, str, int, int | None, int | None]],
+        files: list[AttachmentUpload],
     ) -> RequestCreated:
         request = Request(
             id=uuid4(),
@@ -40,23 +60,12 @@ class RequestService:
             phone=phone,
             comment=comment,
         )
-        bucket = self.storage.settings.s3_private_bucket
         attachment_ids: list[UUID] = []
         try:
-            for stream, original_name, mime_type, size, width, height in files:
+            for file in files:
                 media_id = uuid4()
-                media = Media(
-                    id=media_id,
-                    object_key=f"requests/{media_id}",
-                    original_name=original_name,
-                    mime_type=mime_type,
-                    size_bytes=size,
-                    width=width,
-                    height=height,
-                )
                 attachment_ids.append(media_id)
-                await self.storage.upload(bucket, media.object_key, stream, mime_type)
-                self.media.add(media)
+                await self._store_attachment(media_id, file)
             self.requests.add(request)
             if attachment_ids:
                 await self.db.flush()
@@ -64,11 +73,7 @@ class RequestService:
             await self.db.commit()
         except BaseException:
             await self.db.rollback()
-            for media_id in attachment_ids:
-                try:
-                    await self.storage.delete(bucket, f"requests/{media_id}")
-                except Exception:
-                    logger.exception("Failed to clean up request attachment %s", media_id)
+            await self._cleanup_attachments(attachment_ids)
             raise
         await self.db.refresh(request)
         return RequestCreated(
@@ -143,14 +148,107 @@ class RequestService:
         await self.db.refresh(request)
         return await self.detail(request_id)
 
-    async def list_notes(self, request_id: UUID) -> list[RequestNote]:
-        await self.get(request_id)
-        return await self.notes.list(request_id)
+    async def _store_attachment(self, media_id: UUID, file: AttachmentUpload) -> Media:
+        stream, name, mime_type, size, width, height = file
+        media = Media(
+            id=media_id,
+            object_key=f"requests/{media_id}",
+            original_name=name,
+            mime_type=mime_type,
+            size_bytes=size,
+            width=width,
+            height=height,
+        )
+        await self.storage.upload(
+            self.storage.settings.s3_private_bucket, media.object_key, stream, mime_type
+        )
+        self.media.add(media)
+        return media
 
-    async def add_note(self, request_id: UUID, text: str) -> RequestNote:
+    async def _cleanup_attachments(self, media_ids: list[UUID]) -> None:
+        for media_id in media_ids:
+            try:
+                await self.storage.delete(
+                    self.storage.settings.s3_private_bucket, f"requests/{media_id}"
+                )
+            except Exception:
+                logger.exception("Failed to clean up request attachment %s", media_id)
+
+    async def _store_note_attachment(self, media_id: UUID, file: AttachmentUpload) -> Media:
+        stream, name, mime_type, *_ = file
+        if not mime_type.startswith("image/"):
+            return await self._store_attachment(media_id, file)
+
+        (optimized,) = await run_in_threadpool(
+            encode_catalog_variants, stream, (CATALOG_IMAGE_SIZES[-1],)
+        )
+        with optimized.stream:
+            if optimized.size > MAX_REQUEST_FILE_SIZE:
+                raise OptimizedAttachmentTooLargeError
+            return await self._store_attachment(
+                media_id,
+                (
+                    optimized.stream,
+                    str(PurePosixPath(name).with_suffix(".webp")),
+                    CATALOG_IMAGE_MIME,
+                    optimized.size,
+                    optimized.width,
+                    optimized.height,
+                ),
+            )
+
+    def _note_response(self, note: RequestNote, files: list[Media]) -> RequestNoteRead:
+        return RequestNoteRead(
+            id=note.id,
+            text=note.text,
+            created_at=note.created_at,
+            files=[
+                RequestFile(
+                    id=media.id,
+                    original_name=media.original_name,
+                    mime_type=media.mime_type,
+                    size_bytes=media.size_bytes,
+                    download_url=(
+                        f"/api/v1/admin/requests/{note.request_id}/notes/{note.id}/files/{media.id}"
+                    ),
+                )
+                for media in files
+            ],
+        )
+
+    async def list_notes(self, request_id: UUID) -> list[RequestNoteRead]:
+        await self.get(request_id)
+        notes = await self.notes.list(request_id)
+        files = await self.notes.files_by_note(request_id) if notes else {}
+        return [self._note_response(note, files.get(note.id, [])) for note in notes]
+
+    async def add_note(
+        self, request_id: UUID, text: str, files: list[AttachmentUpload] | None = None
+    ) -> RequestNoteRead:
         await self.get(request_id)
         note = RequestNote(id=uuid4(), request_id=request_id, text=text)
-        self.notes.add(note)
-        await self.db.commit()
+        attempted_ids: list[UUID] = []
+        attachments: list[Media] = []
+        try:
+            for file in files or []:
+                media_id = uuid4()
+                attempted_ids.append(media_id)
+                attachments.append(await self._store_note_attachment(media_id, file))
+            self.notes.add(note)
+            if attachments:
+                await self.db.flush()
+                self.notes.attach_files(note.id, attempted_ids)
+            await self.db.commit()
+        except BaseException:
+            await self.db.rollback()
+            await self._cleanup_attachments(attempted_ids)
+            raise
         await self.db.refresh(note)
-        return note
+        return self._note_response(note, attachments)
+
+    async def note_file(self, request_id: UUID, note_id: UUID, file_id: UUID):
+        media = await self.notes.file(request_id, note_id, file_id)
+        if media is None:
+            raise RequestNotFoundError
+        obj = await self.storage.get(self.storage.settings.s3_private_bucket, media.object_key)
+        return media, obj["Body"]

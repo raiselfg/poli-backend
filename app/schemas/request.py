@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 RequestStatus = Literal["new", "in_progress", "completed"]
+MAX_REQUEST_FILE_SIZE = 5 * 1024 * 1024
 
 
 class RequestCreated(BaseModel):
@@ -63,3 +64,4 @@ class RequestNoteRead(BaseModel):
     id: UUID
     text: str
     created_at: datetime = Field(serialization_alias="createdAt")
+    files: list[RequestFile] = Field(default_factory=list)
