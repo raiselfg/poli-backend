@@ -55,6 +55,7 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
     media_id = None
     request_id = None
     attachment_ids = []
+    variant_urls = []
     image = io.BytesIO()
     Image.new("RGB", (2, 3), "red").save(image, format="PNG")
     storage = S3Storage(storage_settings)
@@ -114,7 +115,18 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             )
             assert response.status_code == 200, response.text
             response = await client.get("/api/v1/categories")
-            assert any(item["id"] == category_id for item in response.json())
+            published = next(item for item in response.json() if item["id"] == category_id)
+            variants = published["images"][0]["variants"]
+            variant_urls = [variant["url"] for variant in variants]
+            assert len(variant_urls) == 3
+            assert len(set(variant_urls)) == 3
+            assert {(variant["width"], variant["height"]) for variant in variants} == {(2, 3)}
+            async with httpx.AsyncClient(trust_env=False) as cdn:
+                for url in variant_urls:
+                    variant = await cdn.get(url)
+                    assert variant.status_code == 200
+                    assert variant.headers["content-type"] == "image/webp"
+                    assert "immutable" in variant.headers["cache-control"]
             assert (await client.delete(f"/api/v1/admin/media/{media_id}")).status_code == 409
             invalid = await client.post(
                 "/api/v1/admin/media", data={"alt": "Изображение"},
@@ -235,6 +247,9 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             detail = await client.get(f"/api/v1/admin/requests/{request_id}")
             assert detail.json()["categoryId"] is None
             assert (await client.delete(f"/api/v1/admin/media/{media_id}")).status_code == 204
+            async with httpx.AsyncClient(trust_env=False) as cdn:
+                for url in variant_urls:
+                    assert (await cdn.get(url)).status_code == 404
             response = await client.post(
                 "/api/v1/requests",
                 data={"name": "Test", "phone": "123"},
@@ -255,7 +270,10 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                     await db.execute(stmt)
             await db.commit()
         if media_id:
-            await storage.delete(storage_settings.s3_public_bucket, f"catalog/{media_id}")
+            for suffix in ("", "/240.webp", "/800.webp"):
+                await storage.delete(
+                    storage_settings.s3_public_bucket, f"catalog/{media_id}{suffix}"
+                )
         for attachment_id in attachment_ids:
             await storage.delete(storage_settings.s3_private_bucket, f"requests/{attachment_id}")
         for bucket in created:

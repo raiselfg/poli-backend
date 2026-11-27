@@ -8,6 +8,12 @@ Slug = Annotated[str, Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(-
 Title = Annotated[str, Field(min_length=1, max_length=160)]
 
 
+class CategoryImageVariant(BaseModel):
+    url: str
+    width: int
+    height: int
+
+
 class CategoryImage(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -16,6 +22,7 @@ class CategoryImage(BaseModel):
     alt: str | None
     width: int | None
     height: int | None
+    variants: list[CategoryImageVariant] = Field(default_factory=list)
 
 
 class CategoryPublic(BaseModel):

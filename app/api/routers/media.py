@@ -2,12 +2,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
-from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import CurrentSessionDep, MediaServiceDep
-from app.api.files import FileTooLargeError, InvalidFileError, check_file, optimize_catalog_image
+from app.api.files import FileTooLargeError, InvalidFileError, check_file
 from app.schemas.media import MediaRead, MediaUpdate
 from app.services.media import MediaInUseError, MediaNotFoundError
+from app.storage.catalog_images import InvalidCatalogImageError
 
 router = APIRouter(prefix="/admin/media", tags=["media"])
 
@@ -33,22 +33,9 @@ async def upload_media(
     except InvalidFileError:
         raise HTTPException(status_code=415, detail="Unsupported file") from None
     try:
-        try:
-            await run_in_threadpool(optimize_catalog_image, checked)
-            width, height = checked.width, checked.height
-            if width is None or height is None:
-                raise InvalidFileError
-        except InvalidFileError:
-            raise HTTPException(status_code=415, detail="Unsupported file") from None
-        return await service.upload(
-            checked.stream,
-            checked.original_name,
-            checked.mime_type,
-            checked.size,
-            width,
-            height,
-            alt,
-        )
+        return await service.upload(checked.stream, checked.original_name, alt)
+    except InvalidCatalogImageError:
+        raise HTTPException(status_code=415, detail="Unsupported file") from None
     finally:
         checked.stream.close()
         await file.close()

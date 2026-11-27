@@ -1,7 +1,9 @@
 from datetime import datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -19,6 +21,12 @@ from app.db.base import Base
 CATALOG_PREFIX = "catalog/"
 
 
+class CatalogVariant(TypedDict):
+    key: str
+    width: int
+    height: int
+
+
 class Media(Base):
     __tablename__ = "media"
     __table_args__ = (
@@ -34,6 +42,7 @@ class Media(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     width: Mapped[int | None]
     height: Mapped[int | None]
+    catalog_variants: Mapped[list[CatalogVariant] | None] = mapped_column(JSON(none_as_null=True))
     alt: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -52,14 +52,22 @@ class S3Storage:
             config=Config(s3={"addressing_style": "path"}),
         )
 
-    async def upload(self, bucket: str, key: str, file, mime_type: str) -> None:
+    async def upload(
+        self, bucket: str, key: str, file, mime_type: str, *, cache_control: str | None = None
+    ) -> None:
+        headers = {"ContentType": mime_type}
+        if cache_control is not None:
+            headers["CacheControl"] = cache_control
         await run_in_threadpool(
             self.client.upload_fileobj,
             file,
             bucket,
             key,
-            ExtraArgs={"ContentType": mime_type},
+            ExtraArgs=headers,
         )
+
+    async def download(self, bucket: str, key: str, file) -> None:
+        await run_in_threadpool(self.client.download_fileobj, bucket, key, file)
 
     async def delete(self, bucket: str, key: str) -> None:
         await run_in_threadpool(self.client.delete_object, Bucket=bucket, Key=key)

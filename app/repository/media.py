@@ -21,8 +21,16 @@ class MediaRepository:
         result = await self.db.execute(stmt)
         return set(result.scalars().all())
 
-    async def by_id(self, media_id: UUID) -> Media | None:
-        return await self.db.get(Media, media_id)
+    async def by_id(self, media_id: UUID, *, lock: bool = False) -> Media | None:
+        return await self.db.get(Media, media_id, with_for_update=lock)
+
+    async def catalog_ids_without_variants(self) -> list[UUID]:
+        stmt = select(Media.id).where(
+            Media.object_key.startswith(CATALOG_PREFIX, autoescape=True),
+            Media.catalog_variants.is_(None),
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
     async def list_catalog(self) -> list[Media]:
         stmt = (

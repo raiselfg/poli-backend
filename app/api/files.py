@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import BinaryIO
 
-from PIL import Image, ImageOps, ImageSequence, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
@@ -101,47 +101,3 @@ async def check_file(
     except BaseException:
         stream.close()
         raise
-
-
-def optimize_catalog_image(checked: CheckedFile) -> None:
-    output = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
-    frames = []
-    try:
-        checked.stream.seek(0)
-        with Image.open(checked.stream) as source:
-            loop = source.info.get("loop", 0)
-            durations = []
-            for frame in ImageSequence.Iterator(source):
-                image = ImageOps.exif_transpose(frame)
-                if "transparency" in image.info:
-                    rgba = image.convert("RGBA")
-                    image.close()
-                    image = rgba
-                image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-                durations.append(frame.info.get("duration", 0))
-                image.info.clear()
-                frames.append(image)
-            width, height = frames[0].size
-            options = {"format": "WEBP", "quality": 80}
-            if len(frames) > 1:
-                options.update(
-                    save_all=True, append_images=frames[1:], duration=durations, loop=loop
-                )
-            frames[0].save(output, **options)
-        size = output.tell()
-        output.seek(0)
-    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
-        output.close()
-        raise InvalidFileError from None
-    except BaseException:
-        output.close()
-        raise
-    finally:
-        for image in frames:
-            image.close()
-    checked.stream.close()
-    checked.stream = output
-    checked.mime_type = "image/webp"
-    checked.size = size
-    checked.width = width
-    checked.height = height

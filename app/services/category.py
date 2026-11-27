@@ -8,7 +8,13 @@ from app.models.category import Category
 from app.models.media import CATALOG_PREFIX, Media
 from app.repository.category import CategoryRepository
 from app.repository.media import MediaRepository
-from app.schemas.category import CategoryAdmin, CategoryCreate, CategoryImage, CategoryUpdate
+from app.schemas.category import (
+    CategoryAdmin,
+    CategoryCreate,
+    CategoryImage,
+    CategoryImageVariant,
+    CategoryUpdate,
+)
 from app.storage.s3 import StorageSettings
 
 
@@ -121,6 +127,14 @@ class CategoryService:
                     alt=image.alt,
                     width=image.width,
                     height=image.height,
+                    variants=[
+                        CategoryImageVariant(
+                            url=self.storage_settings.public_url(variant["key"]),
+                            width=variant["width"],
+                            height=variant["height"],
+                        )
+                        for variant in image.catalog_variants or ()
+                    ],
                 )
                 for image in images
             ],
