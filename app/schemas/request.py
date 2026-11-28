@@ -4,7 +4,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-RequestStatus = Literal["new", "in_progress", "completed"]
+RequestStatus = Literal[
+    "new", "in_progress", "clarifying", "quote_sent", "waiting_reply", "completed", "cancelled"
+]
 MAX_REQUEST_FILE_SIZE = 5 * 1024 * 1024
 
 

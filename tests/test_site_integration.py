@@ -286,10 +286,15 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
                 f"/api/v1/admin/requests/{request_id}/file", params={"file_id": media_id}
             )
             assert unrelated.status_code == 404
-            response = await client.patch(
-                f"/api/v1/admin/requests/{request_id}", json={"status": "completed"}
-            )
-            assert response.json()["status"] == "completed"
+            for status in ("clarifying", "quote_sent", "waiting_reply", "cancelled", "completed"):
+                response = await client.patch(
+                    f"/api/v1/admin/requests/{request_id}", json={"status": status}
+                )
+                assert response.status_code == 200, response.text
+                assert response.json()["status"] == status
+                matching = await client.get("/api/v1/admin/requests", params={"status": status})
+                assert matching.status_code == 200, matching.text
+                assert any(item["id"] == request_id for item in matching.json())
             listed = await client.get("/api/v1/admin/categories")
             ids = [item["id"] for item in listed.json()]
             assert (

@@ -13,7 +13,9 @@ class Request(Base):
         CheckConstraint("length(btrim(name)) > 0", name="chk_requests_name"),
         CheckConstraint("length(btrim(phone)) > 0", name="chk_requests_phone"),
         CheckConstraint(
-            "status IN ('new', 'in_progress', 'completed')", name="chk_requests_status"
+            "status IN ('new', 'in_progress', 'clarifying', 'quote_sent', 'waiting_reply', "
+            "'completed', 'cancelled')",
+            name="chk_requests_status",
         ),
         Index("idx_requests_created_at", text("created_at DESC"), text("id DESC")),
         Index("idx_requests_status_created_at", "status", text("created_at DESC")),
