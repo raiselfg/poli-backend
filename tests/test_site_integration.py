@@ -231,13 +231,13 @@ async def test_site_flow(database, settings, register, monkeypatch):  # noqa: F8
             note_attachment_ids = [item["id"] for item in note_files]
             assert len(note_files) == 5
             photo = note_files[0]
-            assert photo["mimeType"] == "image/webp"
-            assert photo["originalName"] == "photo.webp"
+            assert photo["mimeType"] == "image/png"
+            assert photo["originalName"] == "photo.png"
             downloaded_photo = await client.get(photo["downloadUrl"])
             assert downloaded_photo.status_code == 200
             assert downloaded_photo.headers["cache-control"] == "private, no-store"
             with Image.open(io.BytesIO(downloaded_photo.content)) as optimized:
-                assert optimized.format == "WEBP"
+                assert optimized.format == "PNG"
             assert (await client.get(note_files[1]["downloadUrl"])).content == pdf
             assert (await client.get(notes_path)).json()[0]["files"] == note_files
             wrong_note = photo["downloadUrl"].replace(

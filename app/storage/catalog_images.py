@@ -24,13 +24,17 @@ class CatalogImageVariant:
 
 
 def encode_catalog_variants(
-    stream: BinaryIO, sizes: tuple[int, ...] = CATALOG_IMAGE_SIZES
+    stream: BinaryIO,
+    sizes: tuple[int, ...] = CATALOG_IMAGE_SIZES,
+    *,
+    preserve_format: bool = False,
 ) -> list[CatalogImageVariant]:
     variants = []
     with ExitStack() as outputs:
         try:
             stream.seek(0)
             with Image.open(stream) as source, ExitStack() as frames_to_close:
+                output_format = source.format if preserve_format else "WEBP"
                 frames = {limit: [] for limit in sizes}
                 loop = source.info.get("loop", 0)
                 durations = []
@@ -52,12 +56,16 @@ def encode_catalog_variants(
                 for limit, resized_frames in frames.items():
                     output = outputs.enter_context(SpooledTemporaryFile(max_size=1024 * 1024))
                     first, *rest = resized_frames
-                    options = {"format": "WEBP", "quality": 80}
+                    options = (
+                        {"optimize": True}
+                        if output_format == "PNG"
+                        else {"quality": 80}
+                    )
                     if rest:
                         options.update(
                             save_all=True, append_images=rest, duration=durations, loop=loop
                         )
-                    first.save(output, **options)
+                    first.save(output, format=output_format, **options)
                     size = output.tell()
                     output.seek(0)
                     variants.append(CatalogImageVariant(limit, output, size, *first.size))

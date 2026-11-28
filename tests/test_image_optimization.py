@@ -66,6 +66,25 @@ def test_optimization_preserves_animation():
             assert image.convert("RGB").getpixel((0, 0))[2] > 200
 
 
+@pytest.mark.parametrize("image_format", ["JPEG", "PNG", "WEBP"])
+def test_note_optimization_preserves_format_and_removes_metadata(image_format):
+    source = BytesIO()
+    exif = Image.Exif()
+    exif[274] = 6
+    exif[315] = "Photographer"
+    Image.new("RGB", (120, 60), "red").save(
+        source, format=image_format, exif=exif, icc_profile=b"test profile"
+    )
+
+    (variant,) = encode_catalog_variants(source, (80,), preserve_format=True)
+
+    with variant.stream as stream, Image.open(stream) as image:
+        assert image.format == image_format
+        assert image.size == (40, 80)
+        assert not image.getexif()
+        assert "icc_profile" not in image.info
+
+
 async def test_request_attachment_is_not_optimized():
     source = BytesIO()
     Image.new("RGB", (10, 20), "red").save(source, format="PNG")

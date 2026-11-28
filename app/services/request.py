@@ -1,5 +1,4 @@
 import logging
-from pathlib import PurePosixPath
 from typing import BinaryIO
 from uuid import UUID, uuid4
 
@@ -19,11 +18,7 @@ from app.schemas.request import (
     RequestListItem,
     RequestNoteRead,
 )
-from app.storage.catalog_images import (
-    CATALOG_IMAGE_MIME,
-    CATALOG_IMAGE_SIZES,
-    encode_catalog_variants,
-)
+from app.storage.catalog_images import CATALOG_IMAGE_SIZES, encode_catalog_variants
 from app.storage.s3 import S3Storage
 
 logger = logging.getLogger(__name__)
@@ -180,7 +175,10 @@ class RequestService:
             return await self._store_attachment(media_id, file)
 
         (optimized,) = await run_in_threadpool(
-            encode_catalog_variants, stream, (CATALOG_IMAGE_SIZES[-1],)
+            encode_catalog_variants,
+            stream,
+            (CATALOG_IMAGE_SIZES[-1],),
+            preserve_format=True,
         )
         with optimized.stream:
             if optimized.size > MAX_REQUEST_FILE_SIZE:
@@ -189,8 +187,8 @@ class RequestService:
                 media_id,
                 (
                     optimized.stream,
-                    str(PurePosixPath(name).with_suffix(".webp")),
-                    CATALOG_IMAGE_MIME,
+                    name,
+                    mime_type,
                     optimized.size,
                     optimized.width,
                     optimized.height,
